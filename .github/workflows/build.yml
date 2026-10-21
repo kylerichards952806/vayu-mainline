@@ -47,7 +47,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison flex libssl-dev libelf-dev \
             clang-18 lld-18 llvm-18 \
-            gcc-aarch64-linux-gnu lz4 qemu-user-static
+            gcc-aarch64-linux-gnu libc6-dev-arm64-cross lz4 qemu-user-static
           # LLVM's own bin dir carries the unversioned names the kernel's
           # LLVM=1 mode and the CFI/LTO helpers expect.
           echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
@@ -283,12 +283,13 @@ jobs:
           dtb="$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb"
           out="$RUNNER_TEMP/vayu-boot.img"
           ramdisk="$RUNNER_TEMP/initramfs.cpio.lz4"
-          python3 scripts/mkbootimg.py build --kernel "$kernel" --dtb "$dtb" \
+          # No --dtb: the reference boot image for this device has dtb_size 0
+          # and the tree comes from the dtbo partition instead.
+          python3 scripts/mkbootimg.py build --kernel "$kernel" \
             --ramdisk "$ramdisk" -o "$out"
           python3 scripts/mkbootimg.py verify --image "$out" \
-            --expect-kernel "$kernel" --expect-dtb "$dtb" \
+            --expect-kernel "$kernel" \
             --expect-ramdisk "$ramdisk" \
-            --expect-model "Xiaomi POCO X3 Pro" \
             --kernel-release "$(cat "$BUILD_DIR/include/config/kernel.release")"
 
       # Release naming, as requested: <kernel version>-<builder>-<device>-<date>.
@@ -306,8 +307,14 @@ jobs:
           today=$(date -u +%F)
           name="$version-$suffix-vayu-$today"
 
-          python3 scripts/mkdtbo.py build -o "$RUNNER_TEMP/dtbo.img"
-          python3 scripts/mkdtbo.py verify --image "$RUNNER_TEMP/dtbo.img"
+          # The 5.4 kernel this device ships carries its DTB in the dtbo
+          # partition, not in boot.img (dtb_size is 0 there). Follow it: the
+          # bootloader reads the tree from the DTBO table.
+          python3 scripts/mkdtbo.py build \
+            --dtb "$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb" \
+            -o "$RUNNER_TEMP/dtbo.img"
+          python3 scripts/mkdtbo.py verify --image "$RUNNER_TEMP/dtbo.img" \
+            --expect-dtb "$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb"
 
           python3 scripts/mkrelease.py build \
             --boot "$RUNNER_TEMP/vayu-boot.img" \
@@ -319,6 +326,7 @@ jobs:
           python3 scripts/mkrelease.py verify \
             --zip "$RUNNER_TEMP/$name.zip" \
             --expect-boot "$RUNNER_TEMP/vayu-boot.img" \
+            --expect-dtb "$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb" \
             --kernel-release "$release"
 
           echo "RELEASE_NAME=$name" >> "$GITHUB_ENV"

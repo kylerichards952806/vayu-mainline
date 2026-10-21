@@ -38,16 +38,17 @@ fails the install instead of reporting success.
 
 ## dtbo policy
 
-The zip always flashes `dtbo.img`, because leaving a vendor overlay set in place
-under a mainline kernel is how a port ends up with no display. What it writes is
-a **valid DTBO table with zero entries**, not a block of zeros: the vendor image
-on this device is a proper table (32-byte header, one entry, one 291 KB base DTB
-at id 0, rev 0), and a table with no entries is the same structure with nothing
-to apply. `scripts/mkdtbo.py` writes it and verifies it.
+The zip always flashes `dtbo.img`, because on this device that partition is
+where the kernel's device tree comes from: the 5.4 kernel's `boot.img` has
+`dtb_size` 0 and its `dtbo.img` is a one-entry DTBO table holding the tree.
+Releases copy that layout exactly - `boot.img` without a DTB, `dtbo.img` a
+32 MiB partition holding a one-entry table with `sm8150-xiaomi-vayu.dtb` at id
+0, rev 0, the same ids the vendor image uses.
 
-`--dtb` on `mkdtbo.py build` embeds trees the way the vendor image does, and
-`mkrelease.py build --dtbo FILE` flashes a real image instead, for anyone who
-wants the vendor overlays back.
+A blank table would leave the kernel with no device tree at all, which is why
+it is not the default (`mkdtbo.py build` with no `--dtb`, and
+`mkrelease.py build` with no `--dtb`/`--dtbo`, still emit one for
+inspection).
 
 ## Signing and the AVB footer
 
@@ -60,10 +61,12 @@ this repo does not have and cannot derive.
 
 Writing a footer signed by anything else would be worse than writing none: a
 bootloader that finds a footer will verify it, while an image without one is
-accepted when verification is disabled. Flashing therefore needs an unlocked
-bootloader, which TWRP implies anyway. If the vendor key ever becomes
-available, `mkbootimg.py`/`mkrelease.py` can gain an `avbtool` step and the
-layout above is the one to reproduce.
+accepted when verification is disabled. The 5.4 kernel that runs on this phone
+was itself packaged unsigned and unpadded (56,176,640 bytes for `boot.img`),
+which is the strongest evidence that this device's bootloader does not need a
+footer when unlocked. If the vendor key ever becomes available,
+`mkbootimg.py`/`mkrelease.py` can gain an `avbtool` step and the layout above
+is the one to reproduce.
 
 ## Ramdisk
 

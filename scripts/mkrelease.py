@@ -140,14 +140,16 @@ def cmd_build(args: argparse.Namespace) -> int:
 
     if args.dtbo:
         dtbo = Path(args.dtbo).read_bytes()
+    elif args.dtb:
+        # The reference layout on this device: the tree lives in the dtbo
+        # partition as a one-entry table, and boot.img has dtb_size 0.
+        dtbo = mkdtbo.build([Path(args.dtb).read_bytes()], args.dtbo_size)
+        print(f"dtbo.img: {args.dtbo_size:,} bytes, one entry "
+              f"({Path(args.dtb).stat().st_size:,} bytes from {args.dtb})")
     else:
-        # A valid DTBO table with no entries: ABL parses it and applies no
-        # overlays, which is what a self-contained mainline DTB wants. The
-        # vendor image's single 291 KB base DTB at id 0 is deliberately not
-        # mirrored - it would be applied on top of our DTB as an overlay.
         dtbo = mkdtbo.build([], args.dtbo_size)
         print(f"dtbo.img: {args.dtbo_size:,} bytes, DTBO table with 0 entries "
-              f"(no vendor overlays applied over the mainline DTB)")
+              f"(no device tree; pass --dtb for the reference layout)")
 
     name = release_name(args.version, args.builder, args.device, args.date)
     out = Path(args.output) if args.output else Path(f"{name}.zip")
@@ -199,8 +201,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
     dtbo_info = mkdtbo.describe(dtbo)
     check(dtbo_info["magic"] == mkdtbo.MAGIC,
           "dtbo.img carries a valid DTBO table header")
-    check(dtbo_info["count"] == 0,
-          f"dtbo table has no overlays (got {dtbo_info['count']})")
+    check(dtbo_info["count"] >= 1,
+          f"dtbo table carries the device tree (entries: {dtbo_info['count']})")
+    if dtbo_info["entries"]:
+        size, offset = dtbo_info["entries"][0][:2]
+        check(dtbo[offset:offset + 4] == b"\xd0\x0d\xfe\xed",
+              f"the dtbo entry is a device tree ({size:,} bytes)")
+    if args.expect_dtb and dtbo_info["entries"]:
+        size, offset = dtbo_info["entries"][0][:2]
+        check(dtbo[offset:offset + size] == Path(args.expect_dtb).read_bytes(),
+              "the dtbo entry is byte-identical to the build's DTB")
     check("flash boot" in binary and "flash dtbo" in binary,
           "update-binary flashes both boot and dtbo")
 
@@ -226,7 +236,9 @@ def main() -> int:
 
     b = sub.add_parser("build", help="write the flashable zip")
     b.add_argument("--boot", required=True, help="header-v2 boot.img")
-    b.add_argument("--dtbo", help="dtbo.img to flash (default: a blank one)")
+    b.add_argument("--dtbo", help="dtbo.img to flash")
+    b.add_argument("--dtb", help="build dtbo.img as a one-entry table holding "
+                                 "this device tree (vayu's layout)")
     b.add_argument("--dtbo-size", type=lambda v: int(v, 0),
                    default=DTBO_PARTITION_SIZE)
     b.add_argument("--version", required=True, help="kernel version, e.g. 6.18.32")
@@ -241,6 +253,7 @@ def main() -> int:
     v.add_argument("--zip", required=True)
     v.add_argument("--expect-boot", help="boot.img the zip must contain")
     v.add_argument("--kernel-release", help="string the kernel must carry")
+    v.add_argument("--expect-dtb", help="device tree the dtbo entry must hold")
     v.add_argument("--dtbo-size", type=lambda x: int(x, 0),
                    default=DTBO_PARTITION_SIZE)
     v.set_defaults(func=cmd_verify)

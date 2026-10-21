@@ -15,7 +15,7 @@ result; both run in CI, and the same script builds the artifact by hand.
 | page size | 4096 | `BOARD_KERNEL_PAGESIZE` |
 | kernel | `Image`, load `0x00008000` | `BOARD_KERNEL_IMAGE_NAME := Image`, base `0x00000000` |
 | ramdisk | empty in CI, load `0x01000000` | see the ramdisk note below |
-| dtb | `sm8150-xiaomi-vayu.dtb`, load `0x01f00000` | `BOARD_INCLUDE_DTB_IN_BOOTIMG := true` |
+| dtb | **none** (`dtb_size` 0); the tree travels in `dtbo` | the 5.4 kernel this device ships has `dtb_size` 0 and a one-entry DTBO table |
 | tags address | `0x00000100` | `mkbootimg` default for base 0 |
 | os_version | `0x220001aa` (Android 17, 2026-10) | matches the image on the device today |
 | cmdline | the sm8150-common `BOARD_KERNEL_CMDLINE` plus vayu's two appended lines | official LineageOS trees |
@@ -36,6 +36,18 @@ payload, including the `id` field (`9934e727ea251d55`). That reproduction is
 what the packer's defaults are derived from; `verify` also accepts the device
 image unchanged.
 
+## Where the device tree goes
+
+The board config says `BOARD_INCLUDE_DTB_IN_BOOTIMG := true`, but the 5.4 kernel
+that actually runs on this phone is packaged the other way: its `boot.img` has
+`dtb_size` 0 and its `dtbo.img` is a one-entry DTBO table holding the tree
+(`ci/art22/kernel.zip` on the dev box, 54,437,904-byte kernel, 1,731,322-byte
+LZ4 ramdisk, `os_version 0x220001aa`, no AVB footer, 56,176,640 bytes).
+
+Boot and dtbo therefore have to agree: a `boot.img` with no DTB plus a blank
+dtbo table would hand the kernel no device tree at all. Releases put the tree in
+the DTBO table, exactly where the reference does, and `boot.img` stays DTB-free.
+
 ## The reference image's remaining fields
 
 Measured from the boot image on the device, so a future change can be checked
@@ -45,9 +57,10 @@ against them instead of guessed:
 | --- | --- |
 | ramdisk | 1,731,405 bytes, **LZ4 legacy frame** (`02 21 4c 18`), i.e. `lz4 -l` |
 | `id` | `9934e727ea251d55` |
-| AVB footer | `AVBf` v1.0 in the last 64 bytes of the 128 MiB partition |
+| AVB footer | `AVBf` v1.0 in the last 64 bytes of the 128 MiB partition (the ROM's image is signed) |
 | footer fields | `original_image_size` 56,971,264 = 0x3655000, `vbmeta_offset` 56,971,264, `vbmeta_size` 704 |
 | vbmeta | `AVB0` struct at 56,971,264, then zeros to the footer |
+| the 5.4 kernel's own packaging | unsigned and unpadded: 56,176,640 bytes, no `AVBf` |
 
 The `dtbo` partition follows the same shape: a 291,611-byte table padded to
 294,912 (72 pages), a 640-byte `AVB0` vbmeta there, and the footer at the end

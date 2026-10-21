@@ -135,7 +135,9 @@ def ramdisk_from_boot(path: str) -> bytes:
 
 def build(args: argparse.Namespace) -> int:
     kernel = Path(args.kernel).read_bytes()
-    dtb = Path(args.dtb).read_bytes()
+    # Optional: this device's reference boot image has dtb_size 0 and takes its
+    # tree from the dtbo partition, so --dtb is only for other layouts.
+    dtb = Path(args.dtb).read_bytes() if args.dtb else b""
     if args.ramdisk and args.ramdisk_from_boot:
         print("give --ramdisk or --ramdisk-from-boot, not both", file=sys.stderr)
         return 1
@@ -149,7 +151,7 @@ def build(args: argparse.Namespace) -> int:
     recovery_dtbo = (Path(args.recovery_dtbo).read_bytes()
                      if args.recovery_dtbo else b"")
 
-    if dtb[:4] != b"\xd0\x0d\xfe\xed":
+    if dtb and dtb[:4] != b"\xd0\x0d\xfe\xed":
         print(f"{args.dtb} is not a flattened device tree", file=sys.stderr)
         return 1
 
@@ -295,16 +297,18 @@ def verify(args: argparse.Namespace) -> int:
           f"page size is {PAGE_SIZE} (got {info['page_size']})")
     check(info["kernel_size"] > 0, f"kernel payload present "
           f"({info['kernel_size']:,} bytes)")
-    check(info["dtb_size"] > 0, f"dtb payload present "
-          f"({info['dtb_size']:,} bytes)")
     check(info["kernel"][56:60] == b"ARMd",
           "kernel is an arm64 Image (ARMd magic)")
-    check(info["dtb"][:4] == b"\xd0\x0d\xfe\xed",
-          "dtb is a flattened device tree")
+    if info["dtb_size"]:
+        check(info["dtb"][:4] == b"\xd0\x0d\xfe\xed",
+              "dtb is a flattened device tree")
+        check(info["dtb_addr"] == DTB_ADDR,
+              f"dtb load address is {DTB_ADDR:#x} "
+              f"(got {info['dtb_addr']:#x})")
+    else:
+        print("     dtb: none in this image (vayu takes its tree from dtbo)")
     print(f"     ramdisk: {info['ramdisk_size']:,} bytes, "
           f"{ramdisk_kind(info['ramdisk'])}")
-    check(info["dtb_addr"] == DTB_ADDR,
-          f"dtb load address is {DTB_ADDR:#x} (got {info['dtb_addr']:#x})")
     check(info["kernel_addr"] == KERNEL_ADDR,
           f"kernel load address is {KERNEL_ADDR:#x} (got {info['kernel_addr']:#x})")
     check(info["ramdisk_addr"] == RAMDISK_ADDR,
@@ -363,7 +367,8 @@ def main() -> int:
 
     b = sub.add_parser("build", help="write a header-v2 boot image")
     b.add_argument("--kernel", required=True, help="arm64 Image")
-    b.add_argument("--dtb", required=True, help="flattened device tree")
+    b.add_argument("--dtb", help="flattened device tree to append (optional; "
+                                 "vayu takes its tree from the dtbo partition)")
     b.add_argument("--ramdisk", help="ramdisk image (optional for a kernel-only build)")
     b.add_argument("--ramdisk-from-boot", metavar="BOOT_IMG",
                    help="reuse the ramdisk from an existing boot image, e.g. the "

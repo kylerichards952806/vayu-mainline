@@ -84,6 +84,7 @@ def main() -> int:
     v.add_argument("--image", required=True)
     v.add_argument("--expect-size", type=lambda x: int(x, 0),
                    default=DTBO_PARTITION_SIZE)
+    v.add_argument("--expect-dtb", help="device tree the single entry must hold")
     v.set_defaults(func=lambda a: _verify(a))
 
     args = parser.parse_args()
@@ -125,6 +126,12 @@ def _verify(args: argparse.Namespace) -> int:
     for index, (size, offset, _dt_id, _rev) in enumerate(info["entries"]):
         check(data[offset:offset + 4] == b"\xd0\x0d\xfe\xed",
               f"entry {index} points at a flattened device tree ({size} bytes)")
+    if args.expect_dtb:
+        original = Path(args.expect_dtb).read_bytes()
+        check(info["count"] == 1
+              and data[info["entries"][0][1]:
+                       info["entries"][0][1] + info["entries"][0][0]] == original,
+              "the single entry is byte-identical to the input DTB")
     check(not any(data[info["total_size"]:]),
           "everything after the table is zero padding")
 

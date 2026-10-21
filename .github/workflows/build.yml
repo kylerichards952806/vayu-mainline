@@ -47,7 +47,8 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison flex libssl-dev libelf-dev \
             clang-18 lld-18 llvm-18 \
-            gcc-aarch64-linux-gnu lz4
+            gcc-aarch64-linux-gnu lz4 \
+            libc6-dev
           # LLVM's own bin dir carries the unversioned names the kernel's
           # LLVM=1 mode and the CFI/LTO helpers expect.
           echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"

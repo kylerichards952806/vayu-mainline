@@ -4,8 +4,13 @@ Mainline / Android-Common-Kernel bringup work for the **Xiaomi POCO X3 Pro**
 (`vayu` / `M2102J20SG`, Qualcomm **SM8150**), which currently runs a downstream
 **5.4 QGKI** vendor kernel (`5.4.302-qgki_aman`, `techpack/*` + `qcacld-3.0`).
 
+> **Target: LineageOS 24.0 (Android 17) on an ACK `android17-6.18` kernel.**
+> The 5.4 LineageOS kernel the device runs today is the hardware reference; the
+> vendor HAL stack has to move to open interfaces, which is the real work. See
+> [docs/REFERENCE.md](docs/REFERENCE.md) for the three reference trees.
+>
 > **Status: source vendored, nothing boots yet.** The ACK tree is in `kernel/`,
-> the board description compiles, CI is green. No boot attempt has been made.
+> the board description compiles, no boot attempt has been made.
 
 Read [docs/ASSESSMENT.md](docs/ASSESSMENT.md) first — it answers "how easy is
 this?" with numbers, and separates the two very different projects that the
@@ -18,9 +23,10 @@ phrase *"move vayu to mainline-android"* can mean.
 | `kernel/` | **Vendored Android Common Kernel**, branch **`android17-6.18`**, commit `17e0d6827`, Linux **6.18.32**. Shallow: one tree, no history. 91,828 files, 284 MiB packed. See `kernel.lock`. |
 | `kernel/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dts` | The vayu device tree, integrated into the tree and registered in the qcom `Makefile`. |
 | `import/dts/sm8150-xiaomi-vayu.dts` | The pristine postmarketOS original this was forked from — the rebase log is the diff against the in-tree file. |
-| `import/config/config-postmarketos-qcom-sm8150.aarch64` | 7,968-line config fragment, merged over `defconfig` in CI. |
+| `import/config/` | Reference configs only; CI builds plain `defconfig`. Read that directory's README before merging anything. |
 | `.github/workflows/build.yml` | Builds `sm8150-xiaomi-vayu.dtb` (and optionally the full `Image`) out-of-tree with LLVM 18. |
 | `docs/HARDWARE.md` | Per-subsystem status: what upstream already has for SM8150, what vayu needs on top, what is missing entirely. |
+| `docs/REFERENCE.md` | The LineageOS 5.4 tree, the stock vendor tree and the postmarketOS port: what to take from each. |
 | `docs/PROVENANCE.md` | Exact upstream commits, sizes, and licences. |
 
 Everything under `kernel/` and `import/` is GPL-2.0-only kernel source; the repo
@@ -45,12 +51,12 @@ Requires `clang`/`ld.lld` (17 or newer), `bc`, `bison`, `flex`, `libssl-dev`,
 `libelf-dev`. There is **no local toolchain on the Windows dev box** (no `make`,
 no clang, no WSL — see the 5.4 tree's `AUDIT.md` §5), so CI is the build path.
 
-CI inputs: `full` (build `Image` too), `config` (merge the pmOS fragment).
+CI input: `full` (build the arm64 `Image` as well as the DTBs).
 
 ## Why this exact tree
 
-`android17-6.18` is the ACK line for Android 17, so the KMI generation matches
-the ROM family. `android-mainline` is deliberately **not** used: it tracks Linux
+`android17-6.18` is the ACK line for Android 17, so it is the branch that matches
+the LineageOS 24 userspace generation. `android-mainline` is deliberately **not** used: it tracks Linux
 7.3-rc, reports a fake `7.2-rc9` for userspace compatibility, and carries no KMI
 stability guarantee.
 

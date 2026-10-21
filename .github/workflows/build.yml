@@ -14,10 +14,6 @@ on:
         description: Also build the full arm64 Image (slow)
         type: boolean
         default: false
-      config:
-        description: Merge the imported postmarketOS config
-        type: boolean
-        default: true
 
 permissions:
   contents: read
@@ -27,7 +23,6 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     env:
-      WANT_CONFIG: ${{ github.event_name == 'workflow_dispatch' && inputs.config || 'false' }}
       WANT_IMAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.full || 'false' }}
 
     steps:
@@ -57,14 +52,9 @@ jobs:
       - name: Configure
         run: |
           set -euo pipefail
+          # Neutral base config. The Android 17 config for vayu is P2 work; see
+          # import/config/README.md for why the postmarketOS config is not it.
           make -C kernel O="$BUILD_DIR" ARCH=arm64 LLVM=1 defconfig
-          if [ "$WANT_CONFIG" = "true" ]; then
-            # Merge onto the defconfig that was just written, never by passing
-            # the fragment as the base (that replaced the whole config before).
-            kernel/scripts/kconfig/merge_config.sh -m -O "$BUILD_DIR" \
-              "$BUILD_DIR/.config" \
-              import/config/config-postmarketos-qcom-sm8150.aarch64
-          fi
           make -C kernel O="$BUILD_DIR" ARCH=arm64 LLVM=1 olddefconfig
 
       - name: Build DTBs

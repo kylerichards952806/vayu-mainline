@@ -15,7 +15,7 @@ two orders of magnitude in effort, so the plan has to pick one.
 | # | Interpretation | Verdict |
 | --- | --- | --- |
 | **A** | Replace the 5.4 **vendor** kernel with a newer **vendor** kernel (ACK 6.18 rebased with Qualcomm's SM8150 board support) so the existing Android 17 ROM + vendor blobs keep working. | **Not feasible.** No such base exists, and the vendor userspace is ABI-locked to the 5.4 drivers. |
-| **B** | True upstream bringup: run a **mainline/ACK kernel with an open userspace** (postmarketOS today, optionally `lineage_mainline_common` later). Camera / cellular degrade or disappear. | **Feasible, and someone already did the hard 60%.** Weeks-to-months, not years. |
+| **B** | Run the **Android 17 userspace on an ACK kernel**, replacing the vendor HAL stack with open interfaces (DRM/KMS + minigbm, ASoC + UCM, ath10k) — the `lineage_mainline_common` shape. Camera and cellular degrade or disappear. | **Feasible, and someone already did the hard 60% of the kernel side.** Weeks-to-months for a partial device, months more for Android. |
 | **C** | `android-mainline` (the branch itself) as a device kernel. | **Do not.** It tracks Linux **7.3-rc** development, deliberately reports a fake `7.2-rc9` for userspace compatibility, and carries **no KMI stability guarantee**. It is not a device kernel. The device-facing branch for Android 17 is `android17-6.18`. |
 
 Everything below assumes **B**, with `android17-6.18` as the Android-side target
@@ -65,7 +65,14 @@ device nodes.
 
 ## 2. Why B is tractable (what already exists)
 
-The postmarketOS SM8150 effort has already produced, for this exact phone:
+Two reference trees carry the hardware facts: the **LineageOS 24.0 5.4 kernel**
+the device runs today, and the **stock vendor kernel**
+(`LuffyTaro008/android_kernel_xiaomi_vayu`). Neither can be built against 6.18 —
+their bindings are SDE/KGSL/techpack-specific — but between them they define what
+the board actually is. See [REFERENCE.md](REFERENCE.md).
+
+On the kernel side, the postmarketOS SM8150 effort has already produced, for this
+exact phone:
 
 * `sm8150-xiaomi-vayu.dts` â€” 899 lines, imported into this repo. It carries the
   panel, touchscreen, PMIC/regulator tree, UFS, USB, WCN3990, gpio-keys and the
@@ -140,7 +147,7 @@ run on mainline" â€” no.**
 ## 5. Recommended path
 
 1. **Keep the 5.4 ROM exactly as it is.** It works; nothing in this repo
-   replaces it. The mainline experiment lives in its own `boot.img`.
+   replaces it. The ACK experiment lives in its own `boot.img`.
 2. **Target `android17-6.18`** for anything Android-shaped (KMI generation
    matches Android 17), and plain **6.18 LTS** for a Linux/pmOS-style userspace.
    Do not chase `android-mainline`.

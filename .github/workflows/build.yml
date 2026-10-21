@@ -221,11 +221,41 @@ jobs:
           make -C kernel O="$BUILD_DIR" -j"$(nproc)" ARCH=arm64 LLVM=1 dtbs
           dtb="$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb"
           python3 - "$dtb" <<'PY'
-          import sys
+          import struct, sys
           data = open(sys.argv[1], "rb").read()
           assert data[:4] == b"\xd0\x0d\xfe\xed", data[:4]
           assert b"Xiaomi POCO X3 Pro" in data, "model string missing"
-          print(f"FDT ok: {sys.argv[1]} ({len(data)} bytes)")
+
+          # ABL resolves the vendor dtbo overlay's 135 fixups against the base
+          # tree's __symbols__ (the 5.4 boot DTB exports 1,126 labels), so a
+          # DTB without it cannot take that overlay. DTC_FLAGS_<dtb> := -@ in
+          # the qcom dts Makefile is what puts the node there; this fails the
+          # build if that ever stops happening.
+          _, _, off_struct, off_strings, _, _, _, _, size_str, size_struct = \
+              struct.unpack_from(">10I", data, 0)
+          strings = data[off_strings:off_strings + size_str]
+          p, depth, stack, symbols = off_struct, 0, [], 0
+          while p < off_struct + size_struct:
+              token = struct.unpack_from(">I", data, p)[0]
+              if token == 1:
+                  p += 4
+                  end = data.find(b"\0", p)
+                  stack.append(data[p:end].decode(errors="replace"))
+                  p = (end + 4) & ~3
+              elif token == 2:
+                  stack.pop()
+                  p += 4
+              elif token == 3:
+                  length, name_off = struct.unpack_from(">II", data, p + 4)
+                  if stack and stack[-1] == "__symbols__":
+                      symbols += 1
+                  p = (p + 12 + length + 3) & ~3
+              elif token == 9:
+                  break
+              else:
+                  p += 4
+          assert symbols > 0, "DTB has no __symbols__ (built without -@?)"
+          print(f"FDT ok: {sys.argv[1]} ({len(data):,} bytes, {symbols} symbols)")
           PY
 
       # Hosted runners on this repo stop a job about 30 minutes in (SIGTERM,

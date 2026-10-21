@@ -351,3 +351,9 @@ dtb-$(CONFIG_ARCH_QCOM)	+= x1p42100-hp-omnibook-x14.dtb x1p42100-hp-omnibook-x14
 x1p42100-lenovo-thinkbook-16-el2-dtbs	:= x1p42100-lenovo-thinkbook-16.dtb x1-el2.dtbo
 dtb-$(CONFIG_ARCH_QCOM)	+= x1p42100-lenovo-thinkbook-16.dtb x1p42100-lenovo-thinkbook-16-el2.dtb
 dtb-$(CONFIG_ARCH_QCOM) += sm8150-xiaomi-vayu.dtb
+
+# Symbol information for ABL overlay resolution: the 5.4 boot DTB on the
+# device exports 1,126 labels and the vendor dtbo overlay resolves 135 fixups
+# against them, so a tree without __symbols__ cannot take that overlay at all.
+# Adds ~50 KB to the DTB; the kernel ignores the node.
+DTC_FLAGS_sm8150-xiaomi-vayu := -@

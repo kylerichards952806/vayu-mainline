@@ -23,10 +23,17 @@ on:
         description: Package the TWRP zip and publish it as a GitHub release
         type: boolean
         default: false
+      attempt:
+        description: Internal - continuation round, set by the workflow itself
+        type: number
+        default: 0
 
-# A release is a write to the repo; the build itself only reads it.
+# A release is a write to the repo; the build itself only reads it. `actions:
+# write` lets an unfinished window queue its own continuation, so a build that
+# needs more than one window advances without anyone pressing dispatch again.
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build:
@@ -36,6 +43,11 @@ jobs:
       WANT_IMAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.full || 'false' }}
       CONFIG_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.config_only || 'false' }}
       RELEASE: ${{ (github.event_name == 'workflow_dispatch' && inputs.release) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || 'false' }}
+      # Round 0 is the dispatch a human made; each incomplete window queues the
+      # next round. The cap stops a build that cannot progress (e.g. one that
+      # hits the same compile error every window) from looping forever.
+      ATTEMPT: ${{ (github.event_name == 'workflow_dispatch' && inputs.attempt) || 0 }}
+      MAX_ATTEMPTS: 6
 
     steps:
       - uses: actions/checkout@v4
@@ -346,9 +358,9 @@ jobs:
             echo "- tree: ACK android17-6.18 ($(sed -n 's/^commit=//p' kernel.lock)), Linux $(sed -n 's/^version=//p' kernel.lock)"
             echo "- built from commit $GITHUB_SHA"
             echo
-            echo "Flash the zip in TWRP: it writes boot.img and dtbo.img. The dtbo"
-            echo "image is a valid, empty overlay table, because the mainline device"
-            echo "tree is complete and vendor overlays must not be applied over it."
+            echo "Flash the zip in TWRP: it writes boot.img and dtbo.img. As on the"
+            echo "5.4 image this device runs, the device tree is in the dtbo table"
+            echo "(id 0) and boot.img carries kernel + ramdisk only."
             echo
             echo "The images are unsigned: no AVB footer, because the vendor key is"
             echo "not available. Flashing needs an unlocked bootloader."
@@ -358,11 +370,36 @@ jobs:
             "$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb" \
             --title "$RELEASE_NAME" --notes-file "$notes"
 
-      - name: Report an unfinished build
+      # One window is shorter than a from-scratch build, so an unfinished
+      # window hands its cached build directory to a fresh run instead of
+      # failing. A GITHUB_TOKEN dispatch is allowed for workflow_dispatch and is
+      # exempt from the recursive-trigger block, so this does not need a PAT.
+      - name: Hand the unfinished build to a fresh window
         if: env.INCOMPLETE == '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          echo "::error::Image not built within one window; progress is cached, dispatch the workflow again"
-          exit 1
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" != "workflow_dispatch" ]; then
+            echo "::error::unfinished build on a $GITHUB_EVENT_NAME run; re-run it from the Actions tab"
+            exit 1
+          fi
+          attempt=$(( ${ATTEMPT:-0} + 1 ))
+          if [ "$attempt" -gt "$MAX_ATTEMPTS" ]; then
+            echo "::error::Image still unfinished after $MAX_ATTEMPTS windows; the build directory is cached, so the next dispatch resumes from it"
+            exit 1
+          fi
+          gh workflow run build.yml --ref "$GITHUB_REF_NAME" \
+            -f full=true -f config_only=false -f release="$RELEASE" \
+            -f attempt="$attempt"
+          echo "::notice::window $attempt of $MAX_ATTEMPTS queued; the build directory was cached"
+          {
+            echo "### Window $attempt of $MAX_ATTEMPTS queued"
+            echo
+            echo 'The Image was not linked inside this window. The build'
+            echo 'directory is cached and the next round is already queued,'
+            echo 'so this run does not need to be re-dispatched by hand.'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v4
         if: env.CONFIG_ONLY != 'true'

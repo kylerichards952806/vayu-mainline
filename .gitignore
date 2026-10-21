@@ -4,3 +4,7 @@
 /kernel/.config
 # editor/OS noise
 .DS_Store
+
+# python bytecode from scripts/ (checked out per machine, never committed)
+__pycache__/
+*.pyc

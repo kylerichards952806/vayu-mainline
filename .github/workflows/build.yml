@@ -77,6 +77,16 @@ jobs:
           cp configs/vayu-android17.config "$BUILD_DIR/.config"
           make -C kernel O="$BUILD_DIR" ARCH=arm64 LLVM=1 olddefconfig 2>&1 | tee /tmp/olddefconfig.log
 
+      # A fresh checkout stamps every source with the current time, so make
+      # treats every restored object as stale and rebuilds the whole kernel.
+      # Pinning the sources to an old date is what makes the cache restore
+      # actually save work.
+      - name: Age kernel sources so cached objects stay valid
+        run: |
+          set -euo pipefail
+          find kernel -exec touch -h -d '2026-01-01 00:00:00' {} +
+          echo "sources dated: $(find kernel -newermt '2026-06-01' -type f | wc -l) files newer than June"
+
       - name: Verify config
         run: |
           set -euo pipefail

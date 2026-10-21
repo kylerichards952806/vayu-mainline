@@ -2,7 +2,7 @@
 
 This kernel targets **LineageOS 24.0 / Android 17** on vayu - the same userspace
 and vendor image the device runs today - on an ACK `android17-6.18` kernel.
-Three trees are used as references. None of them can be built here; they are
+Four sources are used as references. None of them can be built here; they are
 consulted for facts.
 
 ## 1. LineageOS 24.0's 5.4 kernel - the primary reference
@@ -56,6 +56,27 @@ port of the same board, already expressed in upstream bindings. It is the only
 one of the three that produces a DTB a 6.18 kernel can parse. Its userspace
 assumptions (pmOS, Phosh, no Android HALs) are **not** what this repo targets  - 
 only its device tree and its driver-level knowledge are reused.
+
+## 4. Official LineageOS trees - the packaging reference
+
+`LineageOS/android_device_xiaomi_vayu`, `LineageOS/android_device_xiaomi_sm8150-common`
+and `LineageOS/android_kernel_xiaomi_sm8150` (branches `lineage-22.2` and
+`lineage-23.2`; Android 15/16, still a 4.14/5.4 vendor kernel). Not a mainline
+reference, but the authority on how this device is *packaged*:
+
+| Fact | Where |
+| --- | --- |
+| Kernel config chain | `vendor/sm8150-perf_defconfig` + `vendor/debugfs.config`(older branches) + `vendor/xiaomi/sm8150-common.config` + `vendor/xiaomi/vayu.config` |
+| Boot image layout | header v2 (`3` only when `TARGET_IS_VAB`), base `0x00000000`, page size `4096`, `Image` (`Image.gz` on legacy), DTB appended into the boot image |
+| Kernel cmdline | `androidboot.hardware=qcom androidboot.console=ttyMSM0 androidboot.memcg=1 lpm_levels.sleep_disabled=1 msm_rtb.filter=0x237 service_locator.enable=1 swiotlb=2048 loop.max_part=7 androidboot.usbcontroller=a600000.dwc3`, plus `androidboot.fstab_suffix=qcom` and `androidboot.init_fatal_reboot_target=recovery` |
+| DTBO | `BOARD_KERNEL_SEPARATED_DTBO := true`, 32 MiB partition |
+
+The config note matters for Phase 2: `configs/vayu-android17.config` was
+generated from the *running* device's `.config` (`CONFIG_LOCALVERSION="-qgki_aman"`,
+i.e. the `sm8150-qgki_defconfig` chain), while official LineageOS builds from
+`sm8150-perf_defconfig`. Regenerating from the official chain would be a cleaner
+base if a future build needs something the qgki config set differently - the
+generator takes any 5.4 `.config`, so it is a one-command change, not a rewrite.
 
 ## What is deliberately not reused
 

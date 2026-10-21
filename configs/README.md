@@ -68,13 +68,13 @@ Two entries are there because this ACK tree does not compile without them:
 - `CONFIG_F2FS_UNFAIR_RWSEM=y` - `fs/f2fs/f2fs.h` uses `sem->read_waiters`
   unconditionally in `f2fs_down_read()` but only declares the member under this
   symbol, so f2fs fails to build when it is unset.
-- `CONFIG_MMU_NOTIFIER=y` - `GKI_HACKS_TO_FIX` (on in the vendor config)
-  selects `GKI_HIDDEN_DRM_CONFIGS`, which selects `HMM_MIRROR` but not
-  `MMU_NOTIFIER`. ACK's `mm/hmm.c` calls `mmu_interval_check_retry()` outside
-  any `#ifdef`, so that pairing does not compile. Every other HMM user in the
-  tree selects both; the 5.4 build got `MMU_NOTIFIER` from a vendor driver that
-  has no 6.18 counterpart. The symbol is a hidden bool, so `.config` is the
-  only place to set it.
+- `# CONFIG_GKI_HACKS_TO_FIX is not set` - it exists so vendor *modules* can be
+  built in a separate tree. It selects `GKI_HIDDEN_DRM_CONFIGS`, which selects
+  `HMM_MIRROR` but not `MMU_NOTIFIER`, and ACK's `mm/hmm.c` calls
+  `mmu_interval_check_retry()` outside any `#ifdef`, so the kernel does not
+  compile. Nothing here is an out-of-tree module: in-tree drivers select their
+  own hidden dependencies. `MMU_NOTIFIER` itself is a hidden bool and cannot be
+  set from `.config`, which is why the gate has to go rather than be satisfied.
 
 ## CI assertions
 
@@ -84,9 +84,8 @@ baked in by the generator) into the out-of-tree build directory, runs
 dependent-symbol resolution - the list is in the workflow's "Verify config"
 step (ARM64, ARCH_QCOM, PINCTRL_SM8150, QCOM_CLK_RPMH,
 INTERCONNECT_QCOM_SM8150, DRM_MSM, SCSI_UFS_QCOM, PHY_QCOM_QMP_UFS, USB_DWC3,
-ATH10K_SNOC, QCOM_Q6V5_PAS, SERIAL_QCOM_GENI, F2FS_UNFAIR_RWSEM,
-MMU_NOTIFIER, and the localversion string), and if `HMM_MIRROR` is on while
-`MMU_NOTIFIER` is not.
+ATH10K_SNOC, QCOM_Q6V5_PAS, SERIAL_QCOM_GENI, F2FS_UNFAIR_RWSEM, and the
+localversion string), and if `GKI_HACKS_TO_FIX` or `HMM_MIRROR` is on.
 
 That check exists because `olddefconfig` is allowed to drop anything whose
 dependencies are unmet; without it, a config that looks right could build a

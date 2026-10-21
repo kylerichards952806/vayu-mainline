@@ -102,20 +102,20 @@ jobs:
             missing=$((missing + 1))
           fi
           # Requirements of this ACK tree, not preferences: f2fs does not
-          # compile without the unfair rwsem, and HMM_MIRROR (pulled in by
-          # GKI_HIDDEN_DRM_CONFIGS) needs MMU_NOTIFIER, which nothing in this
-          # tree selects any more.
-          for need in CONFIG_F2FS_UNFAIR_RWSEM CONFIG_MMU_NOTIFIER; do
-            if ! grep -qx "${need}=y" "$BUILD_DIR/.config"; then
-              echo "::error::${need} is not set"
+          # compile without the unfair rwsem, and GKI_HACKS_TO_FIX drags in
+          # HMM_MIRROR without the MMU_NOTIFIER API hmm.c needs.
+          if ! grep -qx 'CONFIG_F2FS_UNFAIR_RWSEM=y' "$BUILD_DIR/.config"; then
+            echo "::error::CONFIG_F2FS_UNFAIR_RWSEM is not set"
+            missing=$((missing + 1))
+          fi
+          for off in CONFIG_GKI_HACKS_TO_FIX CONFIG_HMM_MIRROR; do
+            # Selected symbols cannot be unset from .config, so a failure here
+            # means something else selects the gate and the pairing is broken.
+            if grep -qx "${off}=y" "$BUILD_DIR/.config"; then
+              echo "::error::${off} is enabled (uncompilable HMM configuration)"
               missing=$((missing + 1))
             fi
           done
-          if grep -qx 'CONFIG_HMM_MIRROR=y' "$BUILD_DIR/.config" &&
-             ! grep -qx 'CONFIG_MMU_NOTIFIER=y' "$BUILD_DIR/.config"; then
-            echo "::error::HMM_MIRROR is enabled without MMU_NOTIFIER (hmm.c will not compile)"
-            missing=$((missing + 1))
-          fi
           echo "--- wireless dependency chain ---"
           grep -E "ATH10K|QCOM_SMEM|HWSPINLOCK|QCOM_RPROC_COMMON|MAC80211|CFG80211" "$BUILD_DIR/.config" || true
           echo "--- olddefconfig warnings mentioning these symbols ---"

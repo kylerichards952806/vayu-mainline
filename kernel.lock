@@ -1,4 +1,4 @@
-# Kernel source vendored in kernel/ — where it came from and what it is.
+# Kernel source vendored in kernel/ - where it came from and what it is.
 # Plain KEY=VALUE so shell and CI can read it without a parser.
 repo=https://android.googlesource.com/kernel/common
 branch=android17-6.18

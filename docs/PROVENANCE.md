@@ -16,7 +16,7 @@ that later commits diff against it cleanly.
 | Consumed by | postmarketOS `linux-postmarketos-qcom-sm8150` (pinned to that commit) |
 
 It `#include`s `sm8150.dtsi`, `pm8150.dtsi`, `pm8150b.dtsi`, `pm8150l.dtsi`,
-all of which exist in `android17-6.18` and in current mainline — verified by
+all of which exist in `android17-6.18` and in current mainline  -  verified by
 fetching them from `android.googlesource.com`.
 
 ### `kernel/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dts` (working copy)
@@ -39,7 +39,7 @@ Changes so far (6.18 rebase):
   (`GCC_QUPV3_WRAP2_S3_CLK`), interrupt (SPI 585) and pin function (`qup13`) are
 taken unchanged from the 6.4-era `sm8150.dtsi`.
 
-## `kernel/` — vendored Android Common Kernel
+## `kernel/`  -  vendored Android Common Kernel
 
 | | |
 | --- | --- |
@@ -60,7 +60,7 @@ Deliberately missing from the tree: `.git`, build output, and any firmware.
 
 **Integrity check.** Every blob in `kernel/` was compared against upstream
 `17e0d6827`: all 91,828 paths are byte-identical (same blob SHA), with exactly
-two intended deltas — `arch/arm64/boot/dts/qcom/Makefile` (one added `dtb-y`
+two intended deltas  -  `arch/arm64/boot/dts/qcom/Makefile` (one added `dtb-y`
 line) and the new `sm8150-xiaomi-vayu.dts`.
 
 ### 13 filenames a Windows checkout cannot hold
@@ -82,7 +82,7 @@ tools/memory-model/litmus-tests/Z6.0+pooncelock+poonceLock+pombonce.litmus
 
 Those 13 paths are marked `skip-worktree` locally so `git status` stays clean on
 Windows; they are present in the commit and in CI. Any future re-import on
-Windows needs the same step — plain `git add` also silently drops every `*.S`
+Windows needs the same step  -  plain `git add` also silently drops every `*.S`
 file, because the kernel's own `.gitignore` has `*.s` and NTFS folds the case.
 
 ## `import/config/config-postmarketos-qcom-sm8150.aarch64`

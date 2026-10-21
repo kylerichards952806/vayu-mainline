@@ -176,9 +176,10 @@ jobs:
           while kill -0 "$build" 2>/dev/null; do
             sleep 60
             kill -0 "$build" 2>/dev/null || break
-            printf 'build running: %s lines, %s in build dir, last: %s\n' \
+            printf 'build running: %s lines, %s in build dir, %s, last: %s\n' \
               "$(wc -l < /tmp/image.log)" \
               "$(du -sh "$BUILD_DIR" | cut -f1)" \
+              "$(free -m | awk '/^Mem:/{print $3"/"$2" MB used"}')" \
               "$(tail -n 1 /tmp/image.log)"
           done
           rc=0

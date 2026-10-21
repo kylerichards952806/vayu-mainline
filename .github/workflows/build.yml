@@ -62,28 +62,37 @@ jobs:
       - name: Verify config
         run: |
           set -euo pipefail
+          # Tristate, so y or m both count: olddefconfig clamps a symbol to the
+          # strongest value its dependencies allow, and Android loads drivers as
+          # modules by design.
           required="
-            CONFIG_ARM64=y
-            CONFIG_ARCH_QCOM=y
-            CONFIG_PINCTRL_SM8150=y
-            CONFIG_QCOM_CLK_RPMH=y
-            CONFIG_INTERCONNECT_QCOM_SM8150=y
-            CONFIG_DRM_MSM=y
-            CONFIG_SCSI_UFS_QCOM=y
-            CONFIG_PHY_QCOM_QMP_UFS=y
-            CONFIG_USB_DWC3=y
-            CONFIG_ATH10K_SNOC=y
-            CONFIG_QCOM_Q6V5_PAS=y
-            CONFIG_SERIAL_QCOM_GENI=y
-            CONFIG_LOCALVERSION="-vayu-mainline"
+            CONFIG_ARM64
+            CONFIG_ARCH_QCOM
+            CONFIG_PINCTRL_SM8150
+            CONFIG_QCOM_CLK_RPMH
+            CONFIG_INTERCONNECT_QCOM_SM8150
+            CONFIG_DRM_MSM
+            CONFIG_SCSI_UFS_QCOM
+            CONFIG_PHY_QCOM_QMP_UFS
+            CONFIG_USB_DWC3
+            CONFIG_ATH10K_SNOC
+            CONFIG_QCOM_Q6V5_PAS
+            CONFIG_SERIAL_QCOM_GENI
           "
           missing=0
-          for want in $required; do
-            if ! grep -qx "$want" "$BUILD_DIR/.config"; then
-              echo "::error::missing from .config: $want"
+          for sym in $required; do
+            value=$(grep -E "^${sym}=" "$BUILD_DIR/.config" | head -1)
+            if [ -z "$value" ] || ! echo "$value" | grep -qE "=[ym]$"; then
+              echo "::error::${sym} is not built-in or modular"
               missing=$((missing + 1))
+            else
+              echo "$value"
             fi
           done
+          if ! grep -qx 'CONFIG_LOCALVERSION="-vayu-mainline"' "$BUILD_DIR/.config"; then
+            echo "::error::CONFIG_LOCALVERSION is not -vayu-mainline"
+            missing=$((missing + 1))
+          fi
           [ "$missing" -eq 0 ] || { echo "$missing required symbol(s) not set"; exit 1; }
           grep -c '^CONFIG_' "$BUILD_DIR/.config" | sed 's/^/configured symbols: /'
 

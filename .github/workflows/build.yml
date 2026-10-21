@@ -151,16 +151,17 @@ jobs:
           print(f"FDT ok: {sys.argv[1]} ({len(data)} bytes)")
           PY
 
+      # Hosted runners on this repo stop a job about 30 minutes in (SIGTERM,
+      # "runner has received a shutdown signal"), which is shorter than one full
+      # build. So the build gets a 20-minute window, the cache save runs
+      # afterwards, and each dispatch advances the work by one window until the
+      # Image exists. The box below reports where the window ended.
       - name: Build Image
         if: env.WANT_IMAGE == 'true' && env.CONFIG_ONLY != 'true'
         run: |
           set -euo pipefail
-          # The final `LD vmlinux.o` is single-threaded and prints nothing for
-          # many minutes. Twice a run was cancelled by the runner during it, so
-          # the build runs in the background and this step reports progress
-          # instead of going silent for the length of the link.
-          make -C kernel O="$BUILD_DIR" -j"$(nproc)" ARCH=arm64 LLVM=1 Image \
-            > /tmp/image.log 2>&1 &
+          timeout --signal=TERM 1200 make -C kernel O="$BUILD_DIR" \
+            -j"$(nproc)" ARCH=arm64 LLVM=1 Image > /tmp/image.log 2>&1 &
           build=$!
           while kill -0 "$build" 2>/dev/null; do
             sleep 60
@@ -173,7 +174,19 @@ jobs:
           rc=0
           wait "$build" || rc=$?
           tail -n 30 /tmp/image.log
+          if [ "$rc" -eq 124 ] || [ "$rc" -eq 143 ]; then
+            echo "INCOMPLETE=1" >> "$GITHUB_ENV"
+            echo "::warning::build window elapsed; the build directory is cached, re-dispatch to continue"
+            exit 0
+          fi
           [ "$rc" -eq 0 ] || exit "$rc"
+
+      # The assertions live in their own step so a partial build can still save
+      # its progress before the run is reported as unfinished.
+      - name: Verify Image carries the kernel name
+        if: env.WANT_IMAGE == 'true' && env.CONFIG_ONLY != 'true' && env.INCOMPLETE != '1'
+        run: |
+          set -euo pipefail
           python3 - "$BUILD_DIR/arch/arm64/boot/Image" <<'PY'
           import struct, sys
           with open(sys.argv[1], "rb") as f:
@@ -187,7 +200,7 @@ jobs:
           release=$(cat "$BUILD_DIR/include/config/kernel.release")
           echo "kernel.release: $release"
           case "$release" in
-            *vayu-kyler084*) echo "uname -r would end in -vayu-kyler084" ;;
+            *vayu-kyler084*) echo "uname -r is $release" ;;
             *) echo "::error::kernel release does not carry vayu-kyler084: $release"; exit 1 ;;
           esac
           if ! grep -aq -- '-vayu-kyler084' "$BUILD_DIR/arch/arm64/boot/Image"; then
@@ -195,6 +208,12 @@ jobs:
             exit 1
           fi
           echo "version string present in Image"
+
+      - name: Report an unfinished build
+        if: env.INCOMPLETE == '1'
+        run: |
+          echo "::error::Image not built within one window; progress is cached, dispatch the workflow again"
+          exit 1
 
       - uses: actions/upload-artifact@v4
         if: env.CONFIG_ONLY != 'true'

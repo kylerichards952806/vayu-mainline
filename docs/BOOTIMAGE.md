@@ -90,6 +90,7 @@ reappeared. "back in fastboot" means USB came back at about four seconds;
 | released mainline | no-op overlay + one-cell `qcom,board-id = <0x2f>` | back in fastboot |
 | released mainline | overlay targeting `/opp-table-cpu0` by its real phandle, `qcom,board-id = <0x2f 0x0>` | back in fastboot |
 | released mainline with `qcom,board-id`/`qcom,msm-id` added to its DTB root | same phandle overlay | back in fastboot |
+| same, plus `__symbols__` (`soc`, `tlmm`, `CPU0`) | vendor style: `target = <0xffffffff>` + `__fixups__ soc` | back in fastboot |
 | released mainline | the vendor's 291,547-byte overlay | back in fastboot |
 | 5.4 kernel + 5.4 ramdisk + 5.4 DTB (repacked here) | **vendor overlay** | runs (Android/recovery in ~15s) |
 | 5.4 kernel + 5.4 ramdisk + 5.4 DTB | our one-entry table | back in fastboot |
@@ -116,6 +117,13 @@ What those rows say, in order of confidence:
    need `__symbols__` in the base tree - ours has none - but that cannot be the
    whole story, since the overlay that needed no fixup at all failed too.
    Nothing is captured: the failure happens before any console exists.
+4. **`__symbols__` is not the missing piece on its own.** The 5.4 boot DTB
+   exports 1,126 symbols and the vendor overlay needs 135 of them resolved
+   against the base, so a mainline base without symbols could never take that
+   overlay. Adding `__symbols__` (and a vendor-style fixup fragment) changed
+   nothing, so at least one more requirement sits between a mainline tree and
+   ABL: the next thing to try is a DTB built with `dtc -@` so the labels are the
+   compiler's, not three hand-written ones.
 
 So the open work is the device-tree handoff, not the kernel image or the AVB
 footer. The next experiments are to give the vendor overlay a base it can apply

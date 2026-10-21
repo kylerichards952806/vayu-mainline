@@ -103,9 +103,55 @@ def add_root_props(fdt, props):
     return header + fdt[40:h["off_struct"]] + struct_block + bytes(strings)
 
 
-def build_overlay(target, props, patch):
-    """A one-fragment overlay: root props on the entry, `patch` inside it."""
-    if isinstance(target, int):
+def add_node(fdt, node, string_props):
+    """Append a child of the root node, e.g. /__symbols__, with string props.
+
+    `__symbols__` is what dtc emits for `-@`, and what an overlay's fixups are
+    resolved against. The kernel tree here is built without it, so this adds it
+    to a compiled blob: label -> path strings, nothing else.
+    """
+    h = _read(fdt)
+    strings = bytearray(fdt[h["off_strings"]:h["off_strings"] + h["size_str"]])
+    added = bytearray()
+    added += struct.pack(">I", FDT_BEGIN_NODE)
+    added += node.encode() + b"\0"
+    while len(added) % 4:
+        added.append(0)
+    for name, value in string_props:
+        name_off = len(strings)
+        strings += name.encode() + b"\0"
+        payload = value.encode() + b"\0"
+        added += struct.pack(">III", FDT_PROP, len(payload), name_off)
+        added += payload
+        while len(added) % 4:
+            added.append(0)
+    added += struct.pack(">I", FDT_END_NODE)
+
+    # The root's END_NODE is the last token of the structure block; the new
+    # child goes just before it.
+    end_token = h["off_struct"] + h["size_struct"] - 4
+    if struct.unpack_from(">I", fdt, end_token)[0] != FDT_END:
+        raise SystemExit("structure block does not end with FDT_END")
+    struct_block = (fdt[h["off_struct"]:end_token] + bytes(added)
+                    + fdt[end_token:h["off_struct"] + h["size_struct"]])
+    new_strings_off = h["off_struct"] + len(struct_block)
+    header = struct.pack(">10I", FDT_MAGIC, new_strings_off + len(strings),
+                         h["off_struct"], new_strings_off, h["off_rsv"],
+                         h["ver"], h["last"], h["cpuid"], len(strings),
+                         len(struct_block))
+    return header + fdt[40:h["off_struct"]] + struct_block + bytes(strings)
+
+
+def build_overlay(target, props, patch, fixup=None):
+    """A one-fragment overlay: root props on the entry, `patch` inside it.
+
+    With `fixup`, the fragment's target is written as <0xffffffff> and a
+    __fixups__ node names the label it should be resolved from - the shape dtc
+    writes when it compiles `target = <&label>` for a tree it cannot see.
+    """
+    if fixup:
+        target_prop = ("target", struct.pack(">I", 0xFFFFFFFF))
+    elif isinstance(target, int):
         target_prop = ("target", struct.pack(">I", target))
     else:
         target_prop = ("target-path", target.encode() + b"\0")
@@ -114,6 +160,9 @@ def build_overlay(target, props, patch):
         if name not in names:
             names[name] = len(strings)
             strings += name.encode() + b"\0"
+    if fixup and fixup not in names:
+        names[fixup] = len(strings)
+        strings += fixup.encode() + b"\0"
 
     block = bytearray()
 
@@ -142,6 +191,10 @@ def build_overlay(target, props, patch):
         prop(name, value)
     end_node()
     end_node()
+    if fixup:
+        begin("__fixups__")
+        prop(fixup, b"/fragment@0:target:0\0")
+        end_node()
     end_node()
     block.extend(struct.pack(">I", FDT_END))
 
@@ -166,6 +219,8 @@ def main() -> int:
     a = sub.add_parser("add-root-props", help="add properties to a DTB's root")
     a.add_argument("--dtb", required=True)
     a.add_argument("--prop", action="append", default=[], metavar="NAME=HEX")
+    a.add_argument("--symbol", action="append", default=[], metavar="LABEL=PATH",
+                   help="also emit /__symbols__ with these label -> path strings")
     a.add_argument("-o", "--output", required=True)
 
     o = sub.add_parser("overlay", help="build a one-fragment overlay")
@@ -174,6 +229,10 @@ def main() -> int:
                    help="node the fragment applies to (default: /)")
     o.add_argument("--phandle", action="store_true",
                    help="use the node's phandle instead of target-path")
+    o.add_argument("--fixup", metavar="LABEL",
+                   help="vendor style: target = <0xffffffff> plus a __fixups__ "
+                        "entry naming LABEL, to be resolved from the base"
+                        " tree's __symbols__")
     o.add_argument("--board-id", default="2f 00",
                    help="qcom,board-id cells, hex (the vendor entry has '2f 00')")
     o.add_argument("-o", "--output", required=True)
@@ -185,7 +244,12 @@ def main() -> int:
             name, _, value = item.partition("=")
             props.append((name, bytes.fromhex(value)))
         blob = open(args.dtb, "rb").read()
-        open(args.output, "wb").write(add_root_props(blob, props))
+        blob = add_root_props(blob, props)
+        if args.symbol:
+            symbols = [tuple(item.split("=", 1)) for item in args.symbol]
+            blob = add_node(blob, "__symbols__", symbols)
+            print(f"__symbols__: {', '.join(f'{k} -> {v}' for k, v in symbols)}")
+        open(args.output, "wb").write(blob)
         print(f"wrote {args.output}")
         return 0
 
@@ -202,7 +266,8 @@ def main() -> int:
         ("compatible", b"qcom,sm8150-cdp\0qcom,sm8150\0qcom,cdp\0"),
         ("qcom,board-id", struct.pack(f">{len(cells)}I", *cells)),
     ]
-    blob = build_overlay(target, props, [("boot-test", b"mainline\0")])
+    blob = build_overlay(target, props, [("boot-test", b"mainline\0")],
+                         fixup=args.fixup)
     open(args.output, "wb").write(blob)
     print(f"wrote {args.output}: {len(blob)} bytes, fragment targets {target}")
     return 0

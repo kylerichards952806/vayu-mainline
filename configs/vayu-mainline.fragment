@@ -72,6 +72,9 @@ CONFIG_SERIAL_QCOM_GENI=y
 CONFIG_SERIAL_QCOM_GENI_CONSOLE=y
 
 # --- WLAN / Bluetooth -------------------------------------------------------
+# WLAN_VENDOR_ATH is a menu gate: unset, ath10k is not merely disabled, it
+# is invisible to kconfig and vanishes from the built .config.
+CONFIG_WLAN_VENDOR_ATH=y
 CONFIG_ATH10K=y
 CONFIG_ATH10K_SNOC=y
 CONFIG_BT_QCA=y

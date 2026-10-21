@@ -139,7 +139,7 @@ jobs:
             echo "::error::CONFIG_F2FS_UNFAIR_RWSEM is not set"
             missing=$((missing + 1))
           fi
-          if grep -qx 'CONFIG_DEBUG_INFO=y' "$BUILD_DIR/.config"; then
+          if ! grep -qx 'CONFIG_DEBUG_INFO_NONE=y' "$BUILD_DIR/.config"; then
             echo "::error::CI must link without debug info: 16 GB is not enough for the DWARF link"
             missing=$((missing + 1))
           fi

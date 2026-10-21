@@ -82,8 +82,9 @@ Two entries are there because this ACK tree does not compile without them:
 vayu has no UART: symbols in `vmlinux` are how a panic is read out of ramoops.
 CI turns it off before `olddefconfig`, because linking `vmlinux.o` with it
 peaks at 15.9 GB on the 16 GB hosted runner and the job is killed. Debug info
-does not affect code generation, so the `Image` CI verifies is byte-for-byte
-the one a full build produces - only `vmlinux` differs.
+does not change code generation - it adds non-allocated `.debug_*` sections to
+`vmlinux`, and an `Image` carries only loaded sections - so the code under test
+is the code a release build produces, while `vmlinux` from CI has no symbols.
 
 ## CI assertions
 

@@ -1,0 +1,108 @@
+name: build
+
+# P1 of docs/ASSESSMENT.md: does the imported 6.4-era vayu DTS still describe
+# the board correctly against a 6.18-era sm8150.dtsi? A green run means "the
+# DTB compiles"; it does not mean the device boots.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Kernel base to build against
+        type: choice
+        options: [android17-6.18, android16-6.12, android15-6.6, linux-6.18.y, linux-6.12.y, mainline]
+        default: android17-6.18
+      full:
+        description: Also build the full arm64 Image (slow)
+        type: boolean
+        default: false
+      config:
+        description: Merge the imported postmarketOS config
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      BASE: ${{ inputs.base || 'android17-6.18' }}
+      WANT_CONFIG: ${{ github.event_name == 'workflow_dispatch' && inputs.config || 'false' }}
+      WANT_IMAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.full || 'false' }}
+      KERNEL_DIR: ${{ runner.temp }}/kernel
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc bison flex libssl-dev libelf-dev \
+            clang-18 lld-18 llvm-18
+          # LLVM's own bin dir carries the unversioned names the kernel's
+          # LLVM=1 mode and the CFI/LTO helpers expect.
+          echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
+          clang --version | head -1
+
+      - name: Fetch kernel and overlay vayu
+        run: |
+          set -euo pipefail
+          if [ "$WANT_CONFIG" = "true" ]; then
+            ./scripts/prepare-tree.sh "$KERNEL_DIR" "$BASE" --with-config
+          else
+            ./scripts/prepare-tree.sh "$KERNEL_DIR" "$BASE"
+          fi
+          echo "kver=$(make -s -C "$KERNEL_DIR" kernelversion)" >> "$GITHUB_OUTPUT"
+
+      - name: Build DTBs
+        id: dtbs
+        working-directory: ${{ runner.temp }}/kernel
+        run: |
+          set -euo pipefail
+          [ -f .config ] || make -j"$(nproc)" ARCH=arm64 LLVM=1 defconfig
+          make -j"$(nproc)" ARCH=arm64 LLVM=1 dtbs
+          dtb=arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb
+          python3 - "$dtb" <<'PY'
+          import sys
+          data = open(sys.argv[1], "rb").read()
+          assert data[:4] == b"\xd0\x0d\xfe\xed", data[:4]
+          print(f"FDT ok: {sys.argv[1]} ({len(data)} bytes)")
+          PY
+          echo "kver=$(make -s kernelversion)" >> "$GITHUB_OUTPUT"
+
+      - name: Build Image
+        if: env.WANT_IMAGE == 'true'
+        working-directory: ${{ runner.temp }}/kernel
+        run: |
+          set -euo pipefail
+          make -j"$(nproc)" ARCH=arm64 LLVM=1 Image
+          python3 - arch/arm64/boot/Image <<'PY'
+          import struct, sys
+          data = open(sys.argv[1], "rb")
+          magic = struct.unpack_from("<I", data.read(64), 56)[0]
+          assert magic == 0x644d5241, hex(magic)   # "ARMd"
+          print("arm64 Image header ok")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vayu-${{ env.BASE }}-dtb
+          path: ${{ runner.temp }}/kernel/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: env.WANT_IMAGE == 'true'
+        with:
+          name: vayu-${{ env.BASE }}-Image
+          path: |
+            ${{ runner.temp }}/kernel/arch/arm64/boot/Image
+            ${{ runner.temp }}/kernel/.config
+          if-no-files-found: error

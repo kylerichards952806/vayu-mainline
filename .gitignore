@@ -1,0 +1,6 @@
+.kernel*/
+/kernel-*/
+out/
+*.o
+*.dtb
+__pycache__/

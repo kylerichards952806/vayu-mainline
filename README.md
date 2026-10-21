@@ -15,7 +15,8 @@ phrase *"move vayu to mainline-android"* can mean.
 
 | Path | What it is |
 | --- | --- |
-| `import/dts/sm8150-xiaomi-vayu.dts` | The **899-line, 106 KB** vayu device tree from the postmarketOS SM8150 tree. This is the single most valuable artefact: it already describes the board (panel, touch, PMICs, regulators, reserved-memory carve-outs, UFS, USB, WCN3990). |
+| `import/dts/sm8150-xiaomi-vayu.dts` | The **899-line, 106 KB** vayu device tree from the postmarketOS SM8150 tree, unmodified. The single most valuable artefact: it already describes the board (panel, touch, PMICs, regulators, reserved-memory carve-outs, UFS, USB, WCN3990). |
+| `dts/sm8150-xiaomi-vayu.dts` | Working copy: the same file plus rebase fixes for 6.18. `diff -u import/dts dts` is the rebase log. |
 | `import/config/config-postmarketos-qcom-sm8150.aarch64` | 7,968-line `defconfig`+`sm8150.config` merge from postmarketOS. Use as a base, not as-is. |
 | `scripts/prepare-tree.sh` | Clones/overlays the DTS and config onto a chosen kernel base and prints the build commands. |
 | `.github/workflows/build.yml` | Compiles the DTB (and optionally a full `Image`) against `android17-6.18`, `android-mainline`, or `linux-6.18.y`. |
@@ -52,10 +53,8 @@ WSL — see the 5.4 tree's `AUDIT.md` §5), so CI is the build path. Workflow
 dispatch inputs: `base`, `full` (build `Image` too), `config` (merge the pmOS
 config).
 
-## First milestone
-
-`sm8150-xiaomi-vayu.dtb` compiles against `android17-6.18` with no binding
-errors. That is a real, checkable step: it proves the imported board description
+## First milestone`sm8150-xiaomi-vayu.dtb` compiles against `android17-6.18` with no binding
+ errors. That is a real, checkable step: it proves the imported board description
 is still valid against a 6.18-era `sm8150.dtsi`, before any boot attempt.
 
 ## Boot-image reality on this device

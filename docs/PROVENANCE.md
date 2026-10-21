@@ -19,6 +19,24 @@ It `#include`s `sm8150.dtsi`, `pm8150.dtsi`, `pm8150b.dtsi`, `pm8150l.dtsi`,
 all of which exist in `android17-6.18` and in current mainline — verified by
 fetching them from `android.googlesource.com`.
 
+### `dts/sm8150-xiaomi-vayu.dts` (working copy)
+
+A copy of the file above that is allowed to diverge. Diff it against the
+snapshot to see every rebase change:
+
+```bash
+diff -u import/dts/sm8150-xiaomi-vayu.dts dts/sm8150-xiaomi-vayu.dts
+```
+
+Changes so far (6.18 rebase):
+
+* re-add the Bluetooth GENI UART as `uart13: serial@c8c000` under
+  `&qupv3_id_2`, plus its `qup_uart13_default` pinctrl state. Current
+  `sm8150.dtsi` keeps only the GENI nodes its own boards use (`uart2`,
+  `uart9`), so `&uart13` no longer resolves. Register, clock
+  (`GCC_QUPV3_WRAP2_S3_CLK`), interrupt (SPI 585) and pin function (`qup13`) are
+taken unchanged from the 6.4-era `sm8150.dtsi`.
+
 ## `import/config/config-postmarketos-qcom-sm8150.aarch64`
 
 | | |

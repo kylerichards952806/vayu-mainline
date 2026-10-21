@@ -46,7 +46,9 @@ QCOM="$DEST/arch/arm64/boot/dts/qcom"
 [ -d "$QCOM" ] || { echo "no $QCOM — wrong base?" >&2; exit 1; }
 
 echo "==> overlaying vayu DTS"
-cp "$ROOT"/import/dts/*.dts "$QCOM"/
+# dts/ is the working copy; import/dts/ is the untouched upstream snapshot it
+# was forked from (diff the two to see every rebase change).
+cp "$ROOT"/dts/*.dts "$QCOM"/
 
 if ! grep -q 'sm8150-xiaomi-vayu.dtb' "$QCOM/Makefile"; then
     echo "==> registering sm8150-xiaomi-vayu.dtb in $QCOM/Makefile"

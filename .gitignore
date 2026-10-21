@@ -1,5 +1,6 @@
 .kernel*/
 /kernel-*/
+.tmp/
 out/
 *.o
 *.dtb

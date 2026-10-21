@@ -365,10 +365,20 @@ jobs:
             echo "The images are unsigned: no AVB footer, because the vendor key is"
             echo "not available. Flashing needs an unlocked bootloader."
           } > "$notes"
-          gh release create "$RELEASE_NAME" "$zip" "$RUNNER_TEMP/dtbo.img" \
-            "$RUNNER_TEMP/vayu-boot.img" \
-            "$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb" \
-            --title "$RELEASE_NAME" --notes-file "$notes"
+          assets=("$zip" "$RUNNER_TEMP/dtbo.img" "$RUNNER_TEMP/vayu-boot.img" \
+                  "$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb")
+          # The date in the name is the only uniqueness, so re-running a build on
+          # the same day used to die here on "a release with the same tag name
+          # already exists" - after the images had been built and checked. A
+          # second build of the same day replaces that release's assets instead.
+          if gh release view "$RELEASE_NAME" > /dev/null 2>&1; then
+            gh release upload "$RELEASE_NAME" "${assets[@]}" --clobber
+            gh release edit "$RELEASE_NAME" --notes-file "$notes"
+            echo "updated existing release $RELEASE_NAME"
+          else
+            gh release create "$RELEASE_NAME" "${assets[@]}" \
+              --title "$RELEASE_NAME" --notes-file "$notes"
+          fi
 
       # One window is shorter than a from-scratch build, so an unfinished
       # window hands its cached build directory to a fresh run instead of

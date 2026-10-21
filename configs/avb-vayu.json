@@ -1,0 +1,19 @@
+{
+  "_measured_from": "the boot and dtbo partitions of the 5.4 image this phone runs (uname -r 5.4.302-vayu-kyler084-0.0.20), read back with dd over adb root",
+  "_why": "ABL refuses an image with no AVB footer on this device: `fastboot boot` answers 'Failed to load/authenticate boot image: Load Error' and never enters the kernel. The device's own vbmeta uses algorithm NONE, so the footer carries only a salted SHA-256 of the image - no key is involved, which is why a mainline image can carry a valid one.",
+  "boot": {
+    "partition_size": 134217728,
+    "salt": "4be8c0ebbe8af2c1f709ec97e61563853bbaf995a8a21980c23e461e6b8e375f",
+    "props": [
+      "com.android.build.boot.os_version:17",
+      "com.android.build.boot.fingerprint:POCO/lineage_vayu/vayu:17/CP2A.260605.016/eng.duckyd:userdebug/release-keys"
+    ]
+  },
+  "dtbo": {
+    "partition_size": 33554432,
+    "salt": "358ae57870384325ebfc5c7e879c9947d33615c43e78fc9bf99116e5281fb088",
+    "props": [
+      "com.android.build.dtbo.fingerprint:POCO/lineage_vayu/vayu:17/CP2A.260605.016/eng.duckyd:userdebug/release-keys"
+    ]
+  }
+}

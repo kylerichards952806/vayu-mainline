@@ -24,11 +24,17 @@ import struct
 import sys
 from pathlib import Path
 
+import avb
+
 MAGIC = 0xD7B7AB1E
 HEADER_SIZE = 32
 ENTRY_SIZE = 32
 PAGE_SIZE = 4096
 DTBO_PARTITION_SIZE = 32 * 1024 * 1024
+# The vendor dtbo's table and tree end at 294,912 bytes (72 pages); everything
+# after that is vbmeta, zero padding and the AVB footer. A footered image needs
+# room for those, so the table is padded to the same place.
+DTBO_IMAGE_SIZE = 72 * 4096
 
 
 def build(dtbs: list[bytes], out_size: int) -> bytes:
@@ -77,6 +83,9 @@ def main() -> int:
                    help="embed this device tree (repeatable); default: none")
     b.add_argument("--size", type=lambda v: int(v, 0),
                    default=DTBO_PARTITION_SIZE)
+    b.add_argument("--avb-config",
+                   help="configs/avb-vayu.json: append the AVB hash footer "
+                        "ABL requires (the vendor dtbo image carries one)")
     b.add_argument("-o", "--output", required=True)
     b.set_defaults(func=lambda a: _build(a))
 
@@ -85,6 +94,7 @@ def main() -> int:
     v.add_argument("--expect-size", type=lambda x: int(x, 0),
                    default=DTBO_PARTITION_SIZE)
     v.add_argument("--expect-dtb", help="device tree the single entry must hold")
+    v.add_argument("--avb-config", help="configs/avb-vayu.json: also check the footer")
     v.set_defaults(func=lambda a: _verify(a))
 
     args = parser.parse_args()
@@ -97,10 +107,25 @@ def _build(args: argparse.Namespace) -> int:
         if dtb[:4] != b"\xd0\x0d\xfe\xed":
             print(f"{path} is not a flattened device tree", file=sys.stderr)
             return 1
-    data = build(dtbs, args.size)
+    size = args.size
+    if args.avb_config:
+        dtbo = avb.config(args.avb_config)["dtbo"]
+        size = dtbo.get("image_size") or DTBO_IMAGE_SIZE
+        total = HEADER_SIZE + ENTRY_SIZE * len(dtbs) + sum(len(d) for d in dtbs)
+        if total > size:
+            # Grow by whole pages instead of failing: a bigger tree than the
+            # vendor's is a normal thing for a mainline build.
+            size = (total + PAGE_SIZE - 1) // PAGE_SIZE * PAGE_SIZE
+            print(f"table is {total:,} bytes; padding the image to {size:,}")
+    data = build(dtbs, size)
     Path(args.output).write_bytes(data)
     print(f"wrote {args.output}: {len(data):,} bytes, "
           f"{len(dtbs)} entr{'y' if len(dtbs) == 1 else 'ies'}")
+    if args.avb_config:
+        avb.add_footer(Path(args.output), "dtbo", dtbo["partition_size"],
+                       dtbo["salt"], dtbo.get("props"))
+        print(f"avb: {Path(args.output).stat().st_size:,} bytes, hash footer "
+              f"for dtbo (algorithm NONE, salt {dtbo['salt'][:16]}...)")
     return 0
 
 
@@ -132,8 +157,17 @@ def _verify(args: argparse.Namespace) -> int:
               and data[info["entries"][0][1]:
                        info["entries"][0][1] + info["entries"][0][0]] == original,
               "the single entry is byte-identical to the input DTB")
-    check(not any(data[info["total_size"]:]),
-          "everything after the table is zero padding")
+    # With a footer the tail is vbmeta + padding + footer, so the zero-padding
+    # check has to stop where the vbmeta blob starts.
+    tail_end = len(data)
+    if args.avb_config:
+        tail_end = avb.parse(Path(args.image))["vbmeta_offset"]
+    check(not any(data[info["total_size"]:tail_end]),
+          "everything between the table and vbmeta is zero padding")
+    if args.avb_config:
+        dtbo = avb.config(args.avb_config)["dtbo"]
+        if avb.verify(Path(args.image), "dtbo", dtbo["partition_size"]):
+            failures.append("AVB footer")
 
     if failures:
         print(f"\n{len(failures)} check(s) failed", file=sys.stderr)

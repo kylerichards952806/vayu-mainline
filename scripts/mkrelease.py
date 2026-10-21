@@ -31,6 +31,7 @@ from datetime import date as date_cls
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+import avb  # noqa: E402  (same directory)
 import mkdtbo  # noqa: E402  (same directory)
 import mkbootimg  # noqa: E402  (same directory, used to parse the payload)
 
@@ -195,14 +196,26 @@ def cmd_verify(args: argparse.Namespace) -> int:
     check(info["header_size"] == mkbootimg.V2_HEADER_SIZE,
           f"header size is {mkbootimg.V2_HEADER_SIZE}")
     check(info["kernel"][56:60] == b"ARMd", "boot.img kernel is an arm64 Image")
-    # This device's 5.4 image has dtb_size 0 and the bootloader reads the tree
-    # out of the DTBO table, so a DTB in boot.img is not a bonus - it is a
-    # second tree that the flash does not need and that would drift out of sync
-    # with the one in dtbo.img.
-    check(info["dtb_size"] == 0,
-          f"boot.img carries no DTB (the tree is in dtbo; got {info['dtb_size']} bytes)")
+    # The 5.4 image this phone boots (uname -r 5.4.302-vayu-kyler084-0.0.20)
+    # puts one tree in boot.img and the same tree again in the dtbo entry. Both
+    # are checked: ABL reads the tree from the dtbo table here, and the copy in
+    # boot.img is what the working image has, so a build that loses either one
+    # is not the layout that was measured.
+    check(info["dtb_size"] > 0,
+          f"boot.img carries the device tree ({info['dtb_size']:,} bytes)")
     check(info["ramdisk_size"] > 0,
           f"boot.img carries a ramdisk ({info['ramdisk_size']:,} bytes)")
+    # Without a footer ABL answers 'Failed to load/authenticate boot image: Load
+    # Error' (measured on this device) and never enters the kernel.
+    for image, name in ((boot, "boot.img"), (dtbo, "dtbo.img")):
+        try:
+            footer = avb.parse(image)
+        except ValueError as error:
+            check(False, f"{name} carries an AVB footer ({error})")
+            continue
+        check(footer["algorithm"] == 0 and footer["descriptors"],
+              f"{name} has an unsigned AVB hash footer "
+              f"({footer['vbmeta_size']} bytes vbmeta, algorithm NONE)")
     check(len(dtbo) == args.dtbo_size,
           f"dtbo.img is {args.dtbo_size:,} bytes (got {len(dtbo):,})")
     dtbo_info = mkdtbo.describe(dtbo)

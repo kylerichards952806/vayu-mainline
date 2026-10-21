@@ -28,6 +28,8 @@ import struct
 import sys
 from pathlib import Path
 
+import avb
+
 MAGIC = b"ANDROID!"
 PAGE_SIZE = 4096
 
@@ -216,6 +218,15 @@ def build(args: argparse.Namespace) -> int:
     print(f"wrote {args.output}: {len(out):,} bytes "
           f"(kernel {len(kernel):,}, ramdisk {len(ramdisk):,}, "
           f"dtb {len(dtb):,}, page {PAGE_SIZE}, header v2)")
+
+    # The bootloader will not load the image without this: see scripts/avb.py
+    # for the measured failure and configs/avb-vayu.json for the parameters.
+    if args.avb_config:
+        boot = avb.config(args.avb_config)["boot"]
+        avb.add_footer(Path(args.output), "boot", boot["partition_size"],
+                       boot["salt"], boot.get("props"))
+        print(f"avb: {Path(args.output).stat().st_size:,} bytes, hash footer "
+              f"for boot (algorithm NONE, salt {boot['salt'][:16]}...)")
     return 0
 
 
@@ -348,6 +359,10 @@ def verify(args: argparse.Namespace) -> int:
         original = Path(args.expect_dtb).read_bytes()
         check(info["dtb"] == original,
               "dtb payload is byte-identical to the input DTB")
+    if args.avb_config:
+        boot = avb.config(args.avb_config)["boot"]
+        if avb.verify(Path(args.image), "boot", boot["partition_size"]):
+            failures.append("AVB footer")
     if args.expect_ramdisk:
         original = Path(args.expect_ramdisk).read_bytes()
         check(info["ramdisk"] == original,
@@ -385,6 +400,9 @@ def main() -> int:
     b.add_argument("--dtb-addr", type=lambda v: int(v, 0), default=DTB_ADDR)
     b.add_argument("--partition-size", type=lambda v: int(v, 0),
                    help="zero-pad the output to this size (vayu's boot is 128 MiB)")
+    b.add_argument("--avb-config",
+                   help="configs/avb-vayu.json: pad to the partition and append "
+                        "the AVB hash footer ABL requires")
     b.add_argument("-o", "--output", required=True)
     b.set_defaults(func=build)
 
@@ -392,6 +410,8 @@ def main() -> int:
     v.add_argument("--image", required=True)
     v.add_argument("--expect-kernel")
     v.add_argument("--expect-dtb")
+    v.add_argument("--avb-config",
+                   help="configs/avb-vayu.json: also check the AVB hash footer")
     v.add_argument("--expect-ramdisk")
     v.add_argument("--kernel-release", help="string the kernel must carry, e.g. 6.18.32-vayu")
     v.add_argument("--expect-model",

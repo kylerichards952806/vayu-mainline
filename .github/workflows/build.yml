@@ -295,13 +295,18 @@ jobs:
           dtb="$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb"
           out="$RUNNER_TEMP/vayu-boot.img"
           ramdisk="$RUNNER_TEMP/initramfs.cpio.lz4"
-          # No --dtb: the reference boot image for this device has dtb_size 0
-          # and the tree comes from the dtbo partition instead.
+          # The tree goes in, because the working 5.4 image on this phone has
+          # one in boot.img as well as in the dtbo entry, and --avb-config pads
+          # the image to the 128 MiB partition and appends the AVB hash footer
+          # ABL requires before it will load anything.
           python3 scripts/mkbootimg.py build --kernel "$kernel" \
-            --ramdisk "$ramdisk" -o "$out"
+            --dtb "$dtb" --ramdisk "$ramdisk" \
+            --avb-config configs/avb-vayu.json -o "$out"
           python3 scripts/mkbootimg.py verify --image "$out" \
-            --expect-kernel "$kernel" \
+            --expect-kernel "$kernel" --expect-dtb "$dtb" \
             --expect-ramdisk "$ramdisk" \
+            --expect-model "Xiaomi POCO X3 Pro" \
+            --avb-config configs/avb-vayu.json \
             --kernel-release "$(cat "$BUILD_DIR/include/config/kernel.release")"
 
       # Release naming, as requested: <kernel version>-<builder>-<device>-<date>.
@@ -324,8 +329,10 @@ jobs:
           # bootloader reads the tree from the DTBO table.
           python3 scripts/mkdtbo.py build \
             --dtb "$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb" \
+            --avb-config configs/avb-vayu.json \
             -o "$RUNNER_TEMP/dtbo.img"
           python3 scripts/mkdtbo.py verify --image "$RUNNER_TEMP/dtbo.img" \
+            --avb-config configs/avb-vayu.json \
             --expect-dtb "$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb"
 
           python3 scripts/mkrelease.py build \

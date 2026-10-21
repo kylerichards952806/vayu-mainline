@@ -26,9 +26,11 @@ Current result:
 
 ```
 source symbols : 5276
-kept           : 4415  (4414 from the source + 1 override)
-dropped        : 854
+kept           : 4434
 ```
+
+`kept` is the filtered source plus the fragment's entries plus the overrides,
+so it moves whenever the fragment does; the meaningful number is `dropped`.
 
 The 854 dropped symbols are the 5.4-only generation: Ion, KGSL, SDE, the
 techpack audio/camera/video plumbing, qcacld/icnss, and assorted 5.4 options.
@@ -42,7 +44,10 @@ the build does not use.
 
 One override: `CONFIG_LOCALVERSION="-vayu-kyler084"` (and `LOCALVERSION_AUTO` off, so
 nothing is appended). Android shows this string under Settings > About phone >
-Kernel version, because that page reports `uname -r`.
+Kernel version, because that page reports `uname -r`, which is
+`6.18.32-vayu-kyler084` here. CI does not take that on trust: the **Build Image**
+step asserts `include/config/kernel.release` and then searches the linked
+`Image` for `-vayu-kyler084`.
 
 ## Why a fragment on top
 
@@ -55,17 +60,30 @@ symbols either did not exist or were not needed on 5.4. Layering
 ath10k_snoc, Q6V5 remoteproc, GENI serial, RPMh clocks/regulators, interconnect,
 dmabuf heaps, binder). Every symbol in it is validated against the target
 Kconfig by the generator, so a typo fails generation rather than silently
-becoming a no-op.
+becoming a no-op. The fragment can switch symbols off too, with
+`# CONFIG_FOO is not set`.
+
+Two entries are there because this ACK tree does not compile without them:
+
+- `CONFIG_F2FS_UNFAIR_RWSEM=y` - `fs/f2fs/f2fs.h` uses `sem->read_waiters`
+  unconditionally in `f2fs_down_read()` but only declares the member under this
+  symbol, so f2fs fails to build when it is unset.
+- `# CONFIG_GKI_HIDDEN_DRM_CONFIGS is not set` - the GKI gate selects
+  `HMM_MIRROR` without `MMU_NOTIFIER`, and `mm/hmm.c` then calls
+  `mmu_interval_check_retry()`, which exists only under `MMU_NOTIFIER`. It is
+  also pointless here: it serves out-of-tree GKI modules, and in-tree
+  `DRM_MSM` selects the DRM helpers it needs itself.
 
 ## CI assertions
 
-`.github/workflows/build.yml` copies `vayu-android17.config` into the out-of-tree
-build directory, merges the fragment over it with `merge_config.sh -m`, runs
+`.github/workflows/build.yml` copies `vayu-android17.config` (fragment already
+baked in by the generator) into the out-of-tree build directory, runs
 `olddefconfig`, and then **fails** if any of the required symbols did not survive
 dependent-symbol resolution - the list is in the workflow's "Verify config"
 step (ARM64, ARCH_QCOM, PINCTRL_SM8150, QCOM_CLK_RPMH,
 INTERCONNECT_QCOM_SM8150, DRM_MSM, SCSI_UFS_QCOM, PHY_QCOM_QMP_UFS, USB_DWC3,
-ATH10K_SNOC, QCOM_Q6V5_PAS, SERIAL_QCOM_GENI, and the localversion string).
+ATH10K_SNOC, QCOM_Q6V5_PAS, SERIAL_QCOM_GENI, F2FS_UNFAIR_RWSEM, the
+localversion string, and HMM_MIRROR / GKI_HIDDEN_DRM_CONFIGS being off).
 
 That check exists because `olddefconfig` is allowed to drop anything whose
 dependencies are unmet; without it, a config that looks right could build a

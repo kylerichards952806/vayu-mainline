@@ -119,8 +119,11 @@ def main() -> int:
     if args.fragment:
         for line in args.fragment.read_text().splitlines():
             line = line.strip()
-            if not line or line.startswith("#"):
+            if not line:
                 continue
+            # "# CONFIG_FOO is not set" starts with '#' but is a setting, so
+            # match it before skipping comments or the fragment could not
+            # switch anything off.
             match = SET.match(line) or UNSET.match(line)
             if match:
                 kept[match.group(1)] = line
@@ -153,11 +156,12 @@ def main() -> int:
         unknown = []
         for line in args.fragment.read_text().splitlines():
             line = line.strip()
-            if not line or line.startswith("#"):
+            if not line:
                 continue
             match = SET.match(line) or UNSET.match(line)
             if not match:
-                unknown.append(f"unparsable line: {line}")
+                if not line.startswith("#"):
+                    unknown.append(f"unparsable line: {line}")
             elif match.group(1) not in symbols:
                 unknown.append(f"{match.group(1)} not in target Kconfig")
         if unknown:

@@ -101,6 +101,21 @@ jobs:
             echo "::error::CONFIG_LOCALVERSION is not -vayu-kyler084"
             missing=$((missing + 1))
           fi
+          # Requirements of this ACK tree, not preferences: f2fs does not
+          # compile without the unfair rwsem, and GKI_HIDDEN_DRM_CONFIGS pulls
+          # in HMM_MIRROR without the MMU_NOTIFIER API hmm.c calls.
+          if ! grep -qx 'CONFIG_F2FS_UNFAIR_RWSEM=y' "$BUILD_DIR/.config"; then
+            echo "::error::CONFIG_F2FS_UNFAIR_RWSEM is not set"
+            missing=$((missing + 1))
+          fi
+          for off in CONFIG_HMM_MIRROR CONFIG_GKI_HIDDEN_DRM_CONFIGS; do
+            # Hidden bools are left out of .config when unset, so test for the
+            # value rather than for a "is not set" line.
+            if grep -qx "${off}=y" "$BUILD_DIR/.config"; then
+              echo "::error::${off} is enabled (uncompilable combination)"
+              missing=$((missing + 1))
+            fi
+          done
           echo "--- wireless dependency chain ---"
           grep -E "ATH10K|QCOM_SMEM|HWSPINLOCK|QCOM_RPROC_COMMON|MAC80211|CFG80211" "$BUILD_DIR/.config" || true
           echo "--- olddefconfig warnings mentioning these symbols ---"
@@ -136,6 +151,20 @@ jobs:
           assert magic == 0x644d5241, hex(magic)   # "ARMd"
           print("arm64 Image header ok")
           PY
+          # Settings > About phone > Kernel version reports `uname -r`, i.e.
+          # kernel.release. Assert the name the device would show, then prove
+          # it is actually embedded in the Image that would be flashed.
+          release=$(cat "$BUILD_DIR/include/config/kernel.release")
+          echo "kernel.release: $release"
+          case "$release" in
+            *vayu-kyler084*) echo "uname -r would end in -vayu-kyler084" ;;
+            *) echo "::error::kernel release does not carry vayu-kyler084: $release"; exit 1 ;;
+          esac
+          if ! grep -aq -- '-vayu-kyler084' "$BUILD_DIR/arch/arm64/boot/Image"; then
+            echo "::error::version name missing from Image"
+            exit 1
+          fi
+          echo "version string present in Image"
 
       - uses: actions/upload-artifact@v4
         if: env.CONFIG_ONLY != 'true'

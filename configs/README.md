@@ -68,11 +68,13 @@ Two entries are there because this ACK tree does not compile without them:
 - `CONFIG_F2FS_UNFAIR_RWSEM=y` - `fs/f2fs/f2fs.h` uses `sem->read_waiters`
   unconditionally in `f2fs_down_read()` but only declares the member under this
   symbol, so f2fs fails to build when it is unset.
-- `# CONFIG_GKI_HIDDEN_DRM_CONFIGS is not set` - the GKI gate selects
-  `HMM_MIRROR` without `MMU_NOTIFIER`, and `mm/hmm.c` then calls
-  `mmu_interval_check_retry()`, which exists only under `MMU_NOTIFIER`. It is
-  also pointless here: it serves out-of-tree GKI modules, and in-tree
-  `DRM_MSM` selects the DRM helpers it needs itself.
+- `CONFIG_MMU_NOTIFIER=y` - `GKI_HACKS_TO_FIX` (on in the vendor config)
+  selects `GKI_HIDDEN_DRM_CONFIGS`, which selects `HMM_MIRROR` but not
+  `MMU_NOTIFIER`. ACK's `mm/hmm.c` calls `mmu_interval_check_retry()` outside
+  any `#ifdef`, so that pairing does not compile. Every other HMM user in the
+  tree selects both; the 5.4 build got `MMU_NOTIFIER` from a vendor driver that
+  has no 6.18 counterpart. The symbol is a hidden bool, so `.config` is the
+  only place to set it.
 
 ## CI assertions
 
@@ -82,8 +84,9 @@ baked in by the generator) into the out-of-tree build directory, runs
 dependent-symbol resolution - the list is in the workflow's "Verify config"
 step (ARM64, ARCH_QCOM, PINCTRL_SM8150, QCOM_CLK_RPMH,
 INTERCONNECT_QCOM_SM8150, DRM_MSM, SCSI_UFS_QCOM, PHY_QCOM_QMP_UFS, USB_DWC3,
-ATH10K_SNOC, QCOM_Q6V5_PAS, SERIAL_QCOM_GENI, F2FS_UNFAIR_RWSEM, the
-localversion string, and HMM_MIRROR / GKI_HIDDEN_DRM_CONFIGS being off).
+ATH10K_SNOC, QCOM_Q6V5_PAS, SERIAL_QCOM_GENI, F2FS_UNFAIR_RWSEM,
+MMU_NOTIFIER, and the localversion string), and if `HMM_MIRROR` is on while
+`MMU_NOTIFIER` is not.
 
 That check exists because `olddefconfig` is allowed to drop anything whose
 dependencies are unmet; without it, a config that looks right could build a

@@ -89,11 +89,10 @@ CONFIG_ARM_QCOM_CPUFREQ_HW=y
 # f2fs does not compile at all - so on this tree it is mandatory.
 CONFIG_F2FS_UNFAIR_RWSEM=y
 
-# GKI_HIDDEN_DRM_CONFIGS exists so *out-of-tree* GKI modules can see hidden
-# DRM symbols. It selects HMM_MIRROR without MMU_NOTIFIER, and ACK's mm/hmm.c
-# then calls mmu_interval_check_retry(), which only exists under
-# CONFIG_MMU_NOTIFIER - so the kernel does not compile. Nothing here is an
-# out-of-tree module: DRM_MSM selects DRM_KMS_HELPER, DRM_MIPI_DSI,
-# DRM_BRIDGE_CONNECTOR and DRM_GEM_SHMEM_HELPER itself in tree, so the gate
-# stays off and HMM_MIRROR is never selected.
-# CONFIG_GKI_HIDDEN_DRM_CONFIGS is not set
+# GKI_HIDDEN_DRM_CONFIGS (selected by GKI_HACKS_TO_FIX, which the vendor
+# config turns on) selects HMM_MIRROR but *not* MMU_NOTIFIER, while ACK's
+# mm/hmm.c calls mmu_interval_check_retry() outside any #ifdef. Every other
+# HMM user in the tree selects both; the 5.4 vendor build only worked because
+# some vendor driver supplied MMU_NOTIFIER, and that driver is gone here. Set
+# it explicitly: it is a hidden bool, so .config is the only place to say it.
+CONFIG_MMU_NOTIFIER=y

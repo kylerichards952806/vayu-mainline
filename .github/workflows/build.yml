@@ -233,6 +233,19 @@ jobs:
           fi
           echo "version string present in Image"
 
+      - name: Package boot.img
+        if: env.WANT_IMAGE == 'true' && env.CONFIG_ONLY != 'true' && env.INCOMPLETE != '1'
+        run: |
+          set -euo pipefail
+          kernel="$BUILD_DIR/arch/arm64/boot/Image"
+          dtb="$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb"
+          out="$RUNNER_TEMP/vayu-boot.img"
+          python3 scripts/mkbootimg.py build --kernel "$kernel" --dtb "$dtb" -o "$out"
+          python3 scripts/mkbootimg.py verify --image "$out" \
+            --expect-kernel "$kernel" --expect-dtb "$dtb" \
+            --expect-model "Xiaomi POCO X3 Pro" \
+            --kernel-release "$(cat "$BUILD_DIR/include/config/kernel.release")"
+
       - name: Report an unfinished build
         if: env.INCOMPLETE == '1'
         run: |
@@ -262,6 +275,13 @@ jobs:
         with:
           path: ${{ runner.temp }}/build
           key: build-${{ hashFiles('kernel.lock', 'configs/vayu-android17.config', 'configs/vayu-mainline.fragment') }}-${{ github.run_id }}
+
+      - uses: actions/upload-artifact@v4
+        if: env.WANT_IMAGE == 'true' && env.CONFIG_ONLY != 'true' && env.INCOMPLETE != '1'
+        with:
+          name: vayu-boot
+          path: ${{ runner.temp }}/vayu-boot.img
+          if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: env.WANT_IMAGE == 'true' && env.CONFIG_ONLY != 'true'

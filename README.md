@@ -26,6 +26,7 @@ phrase *"move vayu to mainline-android"* can mean.
 | `configs/` | `vayu-android17.config` (LineageOS 24.0's 5.4 config filtered to 6.18 symbols), `vayu-mainline.fragment` (upstream drivers the vendor config never needed) and the dropped-symbol list. See its README. |
 | `import/config/` | Reference configs only, not used by the build. |
 | `.github/workflows/build.yml` | Builds `sm8150-xiaomi-vayu.dtb` (and optionally the full `Image`) out-of-tree with LLVM 18. |
+| `scripts/mkbootimg.py` | Writes and verifies the header-v2 `boot.img` CI publishes. See [docs/BOOTIMAGE.md](docs/BOOTIMAGE.md). |
 | `docs/HARDWARE.md` | Per-subsystem status: what upstream already has for SM8150, what vayu needs on top, what is missing entirely. |
 | `docs/REFERENCE.md` | The LineageOS 5.4 tree, the stock vendor tree and the postmarketOS port: what to take from each. |
 | `docs/PROVENANCE.md` | Exact upstream commits, sizes, and licences. |
@@ -39,13 +40,20 @@ The tree is built **out-of-tree** so `kernel/` stays pristine and never fills
 with build artifacts:
 
 ```bash
-make -C kernel O=../build ARCH=arm64 LLVM=1 defconfig
-kernel/scripts/kconfig/merge_config.sh -m -O ../build ../build/.config \
-  import/config/config-postmarketos-qcom-sm8150.aarch64
+cp configs/vayu-android17.config ../build/.config   # fragment already baked in
 make -C kernel O=../build ARCH=arm64 LLVM=1 olddefconfig
-
 make -C kernel O=../build -j"$(nproc)" ARCH=arm64 LLVM=1 dtbs
 make -C kernel O=../build -j"$(nproc)" ARCH=arm64 LLVM=1 Image   # full kernel
+
+# header-v2 boot image: kernel + appended DTB, cmdline and load addresses
+# taken from the device's own boot image (see docs/BOOTIMAGE.md)
+python3 scripts/mkbootimg.py build \
+    --kernel ../build/arch/arm64/boot/Image \
+    --dtb ../build/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb \
+    -o ../build/boot.img
+python3 scripts/mkbootimg.py verify --image ../build/boot.img \
+    --expect-kernel ../build/arch/arm64/boot/Image \
+    --expect-dtb ../build/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb
 ```
 
 Requires `clang`/`ld.lld` (17 or newer), `bc`, `bison`, `flex`, `libssl-dev`,

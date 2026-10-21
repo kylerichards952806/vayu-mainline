@@ -35,8 +35,6 @@ jobs:
       BASE: ${{ inputs.base || 'android17-6.18' }}
       WANT_CONFIG: ${{ github.event_name == 'workflow_dispatch' && inputs.config || 'false' }}
       WANT_IMAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.full || 'false' }}
-      KERNEL_DIR: ${{ runner.temp }}/kernel
-
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +48,7 @@ jobs:
           # LLVM's own bin dir carries the unversioned names the kernel's
           # LLVM=1 mode and the CFI/LTO helpers expect.
           echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
+          echo "KERNEL_DIR=$RUNNER_TEMP/kernel" >> "$GITHUB_ENV"
           clang --version | head -1
 
       - name: Fetch kernel and overlay vayu
@@ -60,10 +59,8 @@ jobs:
           else
             ./scripts/prepare-tree.sh "$KERNEL_DIR" "$BASE"
           fi
-          echo "kver=$(make -s -C "$KERNEL_DIR" kernelversion)" >> "$GITHUB_OUTPUT"
 
       - name: Build DTBs
-        id: dtbs
         working-directory: ${{ runner.temp }}/kernel
         run: |
           set -euo pipefail
@@ -76,7 +73,6 @@ jobs:
           assert data[:4] == b"\xd0\x0d\xfe\xed", data[:4]
           print(f"FDT ok: {sys.argv[1]} ({len(data)} bytes)")
           PY
-          echo "kver=$(make -s kernelversion)" >> "$GITHUB_OUTPUT"
 
       - name: Build Image
         if: env.WANT_IMAGE == 'true'

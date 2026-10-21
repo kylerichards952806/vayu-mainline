@@ -7,6 +7,7 @@ name: build
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
   workflow_dispatch:
     inputs:
@@ -18,9 +19,14 @@ on:
         description: Stop after verifying the config (no compile)
         type: boolean
         default: false
+      release:
+        description: Package the TWRP zip and publish it as a GitHub release
+        type: boolean
+        default: false
 
+# A release is a write to the repo; the build itself only reads it.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -29,6 +35,7 @@ jobs:
     env:
       WANT_IMAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.full || 'false' }}
       CONFIG_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.config_only || 'false' }}
+      RELEASE: ${{ (github.event_name == 'workflow_dispatch' && inputs.release) || (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')) || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -246,6 +253,65 @@ jobs:
             --expect-model "Xiaomi POCO X3 Pro" \
             --kernel-release "$(cat "$BUILD_DIR/include/config/kernel.release")"
 
+      # Release naming, as requested: <kernel version>-<builder>-<device>-<date>.
+      # Builder and device are read out of CONFIG_LOCALVERSION (-vayu-kyler084)
+      # rather than hard-coded, so the file name cannot drift from the name
+      # Settings reports.
+      - name: Package TWRP zip
+        if: env.RELEASE == 'true' && env.WANT_IMAGE == 'true' && env.INCOMPLETE != '1'
+        run: |
+          set -euo pipefail
+          release=$(cat "$BUILD_DIR/include/config/kernel.release")
+          version=${release%%-*}
+          suffix=${release#*-vayu-}
+          suffix=${suffix%%-*}
+          today=$(date -u +%F)
+          name="$version-$suffix-vayu-$today"
+
+          python3 scripts/mkdtbo.py build -o "$RUNNER_TEMP/dtbo.img"
+          python3 scripts/mkdtbo.py verify --image "$RUNNER_TEMP/dtbo.img"
+
+          python3 scripts/mkrelease.py build \
+            --boot "$RUNNER_TEMP/vayu-boot.img" \
+            --dtbo "$RUNNER_TEMP/dtbo.img" \
+            --version "$version" --builder "$suffix" --device vayu \
+            --date "$today" --kernel-name "$release" \
+            -o "$RUNNER_TEMP/$name.zip"
+
+          python3 scripts/mkrelease.py verify \
+            --zip "$RUNNER_TEMP/$name.zip" \
+            --expect-boot "$RUNNER_TEMP/vayu-boot.img" \
+            --kernel-release "$release"
+
+          echo "RELEASE_NAME=$name" >> "$GITHUB_ENV"
+
+      - name: Publish GitHub release
+        if: env.RELEASE == 'true' && env.WANT_IMAGE == 'true' && env.INCOMPLETE != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          zip="$RUNNER_TEMP/$RELEASE_NAME.zip"
+          notes="$RUNNER_TEMP/release-notes.md"
+          {
+            echo "Kernel $RELEASE_NAME for vayu (POCO X3 Pro)."
+            echo
+            echo "- uname -r: \`$(cat "$BUILD_DIR/include/config/kernel.release")\`"
+            echo "- tree: ACK android17-6.18 ($(sed -n 's/^commit=//p' kernel.lock)), Linux $(sed -n 's/^version=//p' kernel.lock)"
+            echo "- built from commit $GITHUB_SHA"
+            echo
+            echo "Flash the zip in TWRP: it writes boot.img and dtbo.img. The dtbo"
+            echo "image is a valid, empty overlay table, because the mainline device"
+            echo "tree is complete and vendor overlays must not be applied over it."
+            echo
+            echo "The images are unsigned: no AVB footer, because the vendor key is"
+            echo "not available. Flashing needs an unlocked bootloader."
+          } > "$notes"
+          gh release create "$RELEASE_NAME" "$zip" "$RUNNER_TEMP/dtbo.img" \
+            "$RUNNER_TEMP/vayu-boot.img" \
+            "$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb" \
+            --title "$RELEASE_NAME" --notes-file "$notes"
+
       - name: Report an unfinished build
         if: env.INCOMPLETE == '1'
         run: |
@@ -275,6 +341,13 @@ jobs:
         with:
           path: ${{ runner.temp }}/build
           key: build-${{ hashFiles('kernel.lock', 'configs/vayu-android17.config', 'configs/vayu-mainline.fragment') }}-${{ github.run_id }}
+
+      - uses: actions/upload-artifact@v4
+        if: env.RELEASE == 'true' && env.INCOMPLETE != '1' && env.RELEASE_NAME != ''
+        with:
+          name: vayu-release-zip
+          path: ${{ runner.temp }}/${{ env.RELEASE_NAME }}.zip
+          if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: env.WANT_IMAGE == 'true' && env.CONFIG_ONLY != 'true' && env.INCOMPLETE != '1'

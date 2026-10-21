@@ -101,10 +101,50 @@ def payload_id(kernel: bytes, ramdisk: bytes, second: bytes,
     return digest.digest()
 
 
+def ramdisk_kind(data: bytes) -> str:
+    """Name the compression of a ramdisk, as Android's unpackers see it."""
+    if not data:
+        return "empty"
+    if data[:4] == b"\x02\x21\x4c\x18":
+        return "lz4 legacy frame (the format vayu's stock ramdisk uses)"
+    if data[:4] == b"\x04\x22\x4d\x18":
+        return "lz4 frame"
+    if data[:2] == b"\x1f\x8b":
+        return "gzip"
+    if data[:6] == b"\xfd7zXZ\x00":
+        return "xz"
+    if data[:4] == b"\x28\xb5\x2f\xfd":
+        return "zstd"
+    if data[:6] == b"070701" or data[:6] == b"070702":
+        return "uncompressed cpio"
+    return "unknown"
+
+
+def ramdisk_from_boot(path: str) -> bytes:
+    """Pull the ramdisk out of an existing boot image.
+
+    This is how a build that has no initramfs of its own reuses the one the
+    device already boots: point it at the boot image read off the phone (the
+    5.4 LineageOS image) and the packer keeps that payload verbatim.
+    """
+    info = parse(Path(path).read_bytes())
+    if info["ramdisk_size"] == 0:
+        raise SystemExit(f"{path} has no ramdisk")
+    return info["ramdisk"]
+
+
 def build(args: argparse.Namespace) -> int:
     kernel = Path(args.kernel).read_bytes()
     dtb = Path(args.dtb).read_bytes()
-    ramdisk = Path(args.ramdisk).read_bytes() if args.ramdisk else b""
+    if args.ramdisk and args.ramdisk_from_boot:
+        print("give --ramdisk or --ramdisk-from-boot, not both", file=sys.stderr)
+        return 1
+    if args.ramdisk_from_boot:
+        ramdisk = ramdisk_from_boot(args.ramdisk_from_boot)
+        print(f"ramdisk: {len(ramdisk):,} bytes from {args.ramdisk_from_boot} "
+              f"({ramdisk_kind(ramdisk)})")
+    else:
+        ramdisk = Path(args.ramdisk).read_bytes() if args.ramdisk else b""
     second = Path(args.second).read_bytes() if args.second else b""
     recovery_dtbo = (Path(args.recovery_dtbo).read_bytes()
                      if args.recovery_dtbo else b"")
@@ -261,6 +301,8 @@ def verify(args: argparse.Namespace) -> int:
           "kernel is an arm64 Image (ARMd magic)")
     check(info["dtb"][:4] == b"\xd0\x0d\xfe\xed",
           "dtb is a flattened device tree")
+    print(f"     ramdisk: {info['ramdisk_size']:,} bytes, "
+          f"{ramdisk_kind(info['ramdisk'])}")
     check(info["dtb_addr"] == DTB_ADDR,
           f"dtb load address is {DTB_ADDR:#x} (got {info['dtb_addr']:#x})")
     check(info["kernel_addr"] == KERNEL_ADDR,
@@ -323,6 +365,9 @@ def main() -> int:
     b.add_argument("--kernel", required=True, help="arm64 Image")
     b.add_argument("--dtb", required=True, help="flattened device tree")
     b.add_argument("--ramdisk", help="ramdisk image (optional for a kernel-only build)")
+    b.add_argument("--ramdisk-from-boot", metavar="BOOT_IMG",
+                   help="reuse the ramdisk from an existing boot image, e.g. the "
+                        "stock 5.4 android boot image read off the device")
     b.add_argument("--second", help="second stage payload")
     b.add_argument("--recovery-dtbo", help="recovery DTBO payload")
     b.add_argument("--name", default=NAME.decode())

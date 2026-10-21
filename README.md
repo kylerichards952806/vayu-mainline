@@ -27,6 +27,7 @@ phrase *"move vayu to mainline-android"* can mean.
 | `import/config/` | Reference configs only, not used by the build. |
 | `.github/workflows/build.yml` | Builds `sm8150-xiaomi-vayu.dtb` (and optionally the full `Image`) out-of-tree with LLVM 18. |
 | `scripts/mkbootimg.py` | Writes and verifies the header-v2 `boot.img` CI publishes. See [docs/BOOTIMAGE.md](docs/BOOTIMAGE.md). |
+| `scripts/mkdtbo.py`, `scripts/mkrelease.py` | Build the `dtbo` image and the TWRP zip that flashes `boot` and `dtbo`; [docs/RELEASES.md](docs/RELEASES.md) covers naming and behaviour. |
 | `docs/HARDWARE.md` | Per-subsystem status: what upstream already has for SM8150, what vayu needs on top, what is missing entirely. |
 | `docs/REFERENCE.md` | The LineageOS 5.4 tree, the stock vendor tree and the postmarketOS port: what to take from each. |
 | `docs/PROVENANCE.md` | Exact upstream commits, sizes, and licences. |

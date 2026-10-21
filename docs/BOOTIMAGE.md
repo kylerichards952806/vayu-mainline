@@ -36,12 +36,31 @@ payload, including the `id` field (`9934e727ea251d55`). That reproduction is
 what the packer's defaults are derived from; `verify` also accepts the device
 image unchanged.
 
+## The reference image's remaining fields
+
+Measured from the boot image on the device, so a future change can be checked
+against them instead of guessed:
+
+| Field | Reference value |
+| --- | --- |
+| ramdisk | 1,731,405 bytes, **LZ4 legacy frame** (`02 21 4c 18`), i.e. `lz4 -l` |
+| `id` | `9934e727ea251d55` |
+| AVB footer | `AVBf` v1.0 in the last 64 bytes of the 128 MiB partition |
+| footer fields | `original_image_size` 56,971,264 = 0x3655000, `vbmeta_offset` 56,971,264, `vbmeta_size` 704 |
+| vbmeta | `AVB0` struct at 56,971,264, then zeros to the footer |
+
+The `dtbo` partition follows the same shape: a 291,611-byte table padded to
+294,912 (72 pages), a 640-byte `AVB0` vbmeta there, and the footer at the end
+of the 32 MiB partition. Our images are unsigned - see
+[RELEASES.md](RELEASES.md#signing-and-the-avb-footer).
+
 ## What is still missing from the artifact
 
-- **No ramdisk.** CI packages the kernel and DTB only, so `ramdisk_size` is 0.
-  Android's `init` lives in the ramdisk; until the P2 initramfs exists, this
-  image is a layout-correct kernel carrier, not a bootable Android boot image.
-  `--ramdisk FILE` fills the slot when that work lands.
+- **No ramdisk in CI.** CI packages the kernel and DTB only, so `ramdisk_size`
+  is 0. Android's `init` lives in the ramdisk; a release build on the dev box
+  fills it from the device's own image with
+  `--ramdisk-from-boot backup/boot-now.img`, which copies the LZ4 payload
+  verbatim.
 - **No AVB footer.** The device image ends with an `AVBf` vbmeta struct; ours
   does not. A bootloader with verification enforcing will reject it, so flashing
   this needs an unlocked bootloader, or a later step that runs `avbtool` with the

@@ -87,7 +87,9 @@ reappeared. "back in fastboot" means USB came back at about four seconds;
 | released mainline (AVB footer) | our one-entry table | back in fastboot |
 | released mainline | blank table (0 entries) | back in fastboot |
 | released mainline | no-op overlay, no board-id | back in fastboot |
-| released mainline | no-op overlay + `qcom,board-id = <0x2f>` | back in fastboot |
+| released mainline | no-op overlay + one-cell `qcom,board-id = <0x2f>` | back in fastboot |
+| released mainline | overlay targeting `/opp-table-cpu0` by its real phandle, `qcom,board-id = <0x2f 0x0>` | back in fastboot |
+| released mainline with `qcom,board-id`/`qcom,msm-id` added to its DTB root | same phandle overlay | back in fastboot |
 | released mainline | the vendor's 291,547-byte overlay | back in fastboot |
 | 5.4 kernel + 5.4 ramdisk + 5.4 DTB (repacked here) | **vendor overlay** | runs (Android/recovery in ~15s) |
 | 5.4 kernel + 5.4 ramdisk + 5.4 DTB | our one-entry table | back in fastboot |
@@ -106,10 +108,14 @@ What those rows say, in order of confidence:
    avbtool's version string. Changing only the entry content - to our tree, to
    an empty overlay, to a board-id stub - always ends in fastboot. So the entry
    has to be an overlay ABL can apply, and it targets the vendor DT's nodes.
-3. **Our own DTB is not yet accepted in that slot.** The vendor overlay cannot
-   apply onto a mainline tree, and every combination with our DTB returned to
-   fastboot within ~4 s. The failure has no USB or pstore trace: nothing was
-   captured because the kernel never reached a console.
+3. **Our own DTB is not yet accepted in that slot.** An overlay whose fragment
+   targets a node that does exist in our tree (`/opp-table-cpu0`, addressed by
+   its own phandle) does not help, and neither does adding the vendor's
+   `qcom,board-id = <0x2f 0x0>` and `qcom,msm-id` to our root: still fastboot in
+   ~4 s. The vendor overlay's fragments are `target = <0xffffffff>` fixups, which
+   need `__symbols__` in the base tree - ours has none - but that cannot be the
+   whole story, since the overlay that needed no fixup at all failed too.
+   Nothing is captured: the failure happens before any console exists.
 
 So the open work is the device-tree handoff, not the kernel image or the AVB
 footer. The next experiments are to give the vendor overlay a base it can apply

@@ -14,6 +14,10 @@ on:
         description: Also build the full arm64 Image (slow)
         type: boolean
         default: false
+      config_only:
+        description: Stop after verifying the config (no compile)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -24,6 +28,7 @@ jobs:
     timeout-minutes: 180
     env:
       WANT_IMAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.full || 'false' }}
+      CONFIG_ONLY: ${{ github.event_name == 'workflow_dispatch' && inputs.config_only || 'false' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -55,9 +60,10 @@ jobs:
           # LineageOS 24.0's 5.4 config, filtered to symbols this tree still
           # defines, then the upstream drivers the vendor config never needed.
           mkdir -p "$BUILD_DIR"
+          # The generated file already contains the fragment; see
+          # scripts/gen-config.py and configs/README.md.
           cp configs/vayu-android17.config "$BUILD_DIR/.config"
-          kernel/scripts/kconfig/merge_config.sh -m -O "$BUILD_DIR"             "$BUILD_DIR/.config" configs/vayu-mainline.fragment
-          make -C kernel O="$BUILD_DIR" ARCH=arm64 LLVM=1 olddefconfig
+          make -C kernel O="$BUILD_DIR" ARCH=arm64 LLVM=1 olddefconfig 2>&1 | tee /tmp/olddefconfig.log
 
       - name: Verify config
         run: |
@@ -95,12 +101,17 @@ jobs:
             echo "::error::CONFIG_LOCALVERSION is not -vayu-mainline"
             missing=$((missing + 1))
           fi
+          echo "--- wireless dependency chain ---"
+          grep -E "ATH10K|QCOM_SMEM|HWSPINLOCK|QCOM_RPROC_COMMON|MAC80211|CFG80211" "$BUILD_DIR/.config" || true
+          echo "--- olddefconfig warnings mentioning these symbols ---"
+          grep -iE "ath10k|qcom_smem|rproc_common" /tmp/olddefconfig.log || true
           [ "$missing" -eq 0 ] || { echo "$missing required symbol(s) not set"; exit 1; }
           echo "--- dependency chain for the wireless stack ---"
           grep -E "^(CONFIG_(HWSPINLOCK|QCOM_SMEM|QCOM_RPROC_COMMON|REMOTEPROC|MAC80211|CFG80211|ATH10K|ATH10K_SNOC)=|# CONFIG_(HWSPINLOCK|QCOM_SMEM|QCOM_RPROC_COMMON|MAC80211|CFG80211|ATH10K|ATH10K_SNOC) is not set)" "$BUILD_DIR/.config" || true
           grep -c '^CONFIG_' "$BUILD_DIR/.config" | sed 's/^/configured symbols: /'
 
       - name: Build DTBs
+        if: env.CONFIG_ONLY != 'true'
         run: |
           set -euo pipefail
           make -C kernel O="$BUILD_DIR" -j"$(nproc)" ARCH=arm64 LLVM=1 dtbs
@@ -114,7 +125,7 @@ jobs:
           PY
 
       - name: Build Image
-        if: env.WANT_IMAGE == 'true'
+        if: env.WANT_IMAGE == 'true' && env.CONFIG_ONLY != 'true'
         run: |
           set -euo pipefail
           make -C kernel O="$BUILD_DIR" -j"$(nproc)" ARCH=arm64 LLVM=1 Image
@@ -127,13 +138,21 @@ jobs:
           PY
 
       - uses: actions/upload-artifact@v4
+        if: env.CONFIG_ONLY != 'true'
         with:
           name: vayu-dtb
           path: ${{ runner.temp }}/build/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
-        if: env.WANT_IMAGE == 'true'
+        if: always()
+        with:
+          name: vayu-config
+          path: ${{ runner.temp }}/build/.config
+          if-no-files-found: warn
+
+      - uses: actions/upload-artifact@v4
+        if: env.WANT_IMAGE == 'true' && env.CONFIG_ONLY != 'true'
         with:
           name: vayu-Image
           path: |

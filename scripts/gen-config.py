@@ -110,6 +110,18 @@ def main() -> int:
         else:
             dropped.append(name)
 
+    # The fragment is applied here, not by merge_config.sh in CI: the committed
+    # config file is then exactly what the build starts from, and a duplicate
+    # "is not set" line in the filtered source cannot resurrect itself.
+    if args.fragment:
+        for line in args.fragment.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            match = SET.match(line) or UNSET.match(line)
+            if match:
+                kept[match.group(1)] = line
+
     kept.update(OVERRIDES)
 
     header = [

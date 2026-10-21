@@ -155,7 +155,25 @@ jobs:
         if: env.WANT_IMAGE == 'true' && env.CONFIG_ONLY != 'true'
         run: |
           set -euo pipefail
-          make -C kernel O="$BUILD_DIR" -j"$(nproc)" ARCH=arm64 LLVM=1 Image
+          # The final `LD vmlinux.o` is single-threaded and prints nothing for
+          # many minutes. Twice a run was cancelled by the runner during it, so
+          # the build runs in the background and this step reports progress
+          # instead of going silent for the length of the link.
+          make -C kernel O="$BUILD_DIR" -j"$(nproc)" ARCH=arm64 LLVM=1 Image \
+            > /tmp/image.log 2>&1 &
+          build=$!
+          while kill -0 "$build" 2>/dev/null; do
+            sleep 60
+            kill -0 "$build" 2>/dev/null || break
+            printf 'build running: %s lines, %s in build dir, last: %s\n' \
+              "$(wc -l < /tmp/image.log)" \
+              "$(du -sh "$BUILD_DIR" | cut -f1)" \
+              "$(tail -n 1 /tmp/image.log)"
+          done
+          rc=0
+          wait "$build" || rc=$?
+          tail -n 30 /tmp/image.log
+          [ "$rc" -eq 0 ] || exit "$rc"
           python3 - "$BUILD_DIR/arch/arm64/boot/Image" <<'PY'
           import struct, sys
           with open(sys.argv[1], "rb") as f:
@@ -193,8 +211,10 @@ jobs:
           include-hidden-files: true
           if-no-files-found: warn
 
+      # Even a failed build leaves most objects behind, and restoring them is
+      # what makes the next attempt finish instead of starting over.
       - name: Save build directory
-        if: env.CONFIG_ONLY != 'true'
+        if: always() && env.CONFIG_ONLY != 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/build

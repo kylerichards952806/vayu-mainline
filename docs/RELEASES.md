@@ -67,10 +67,16 @@ layout above is the one to reproduce.
 
 ## Ramdisk
 
-The device's stock image carries an **LZ4 legacy-frame ramdisk** of 1,731,405
-bytes; `mkbootimg.py --ramdisk-from-boot backup/boot-now.img` copies exactly
-that payload into a build (CI has no vendor bytes, so the CI artifact's
-`ramdisk_size` is 0). Use it when producing a release on the dev box:
+Releases carry **our own ramdisk**: CI cross-compiles
+[initramfs/init.c](../initramfs/init.c) to a static aarch64 binary and packs it
+with `scripts/mkinitramfs.py --lz4`, the same container the stock image uses.
+It mounts the pseudo filesystems, prints `uname` and the cmdline, lists
+`/sys/fs/pstore`, and idles as pid 1 - enough to complete a boot and to recover
+a log on a device with no UART, with no vendor bytes involved.
+
+The device's stock ramdisk is an LZ4 legacy frame of 1,731,405 bytes, and
+`mkbootimg.py --ramdisk-from-boot backup/boot-now.img` copies exactly that
+payload instead, when the goal is to reach Android userspace:
 
 ```bash
 python3 scripts/mkbootimg.py build \

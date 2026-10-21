@@ -83,6 +83,13 @@ CONFIG_BT_HCIUART=y
 # --- CPU frequency ----------------------------------------------------------
 CONFIG_ARM_QCOM_CPUFREQ_HW=y
 
+# --- initramfs support ------------------------------------------------------
+# The vendor config leaves devtmpfs out, because a 5.4 Android boot relied on
+# the ramdisk's static /dev plus first-stage init. A mainline initramfs mounts
+# /dev itself, and Android userspace expects it mounted, so it has to be on.
+CONFIG_DEVTMPFS=y
+CONFIG_DEVTMPFS_MOUNT=y
+
 # --- configs that are requirements, not preferences -------------------------
 # ACK's fs/f2fs/f2fs.h dereferences sem->read_waiters in f2fs_down_read()
 # outside any #ifdef, but only declares that member when this is set. Unset,

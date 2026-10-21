@@ -46,12 +46,38 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             bc bison flex libssl-dev libelf-dev \
-            clang-18 lld-18 llvm-18
+            clang-18 lld-18 llvm-18 \
+            gcc-aarch64-linux-gnu lz4
           # LLVM's own bin dir carries the unversioned names the kernel's
           # LLVM=1 mode and the CFI/LTO helpers expect.
           echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
           echo "BUILD_DIR=$RUNNER_TEMP/build" >> "$GITHUB_ENV"
           clang --version | head -1
+
+      # The initramfs is built before the kernel so a broken cross-compiler or
+      # a bad cpio fails the run in seconds instead of twenty minutes in.
+      - name: Build initramfs
+        run: |
+          set -euo pipefail
+          cc=aarch64-linux-gnu-gcc
+          # -static keeps /init self-contained: the ramdisk has no libc.
+          $cc -Os -static -Wall -Wextra -Werror -o "$RUNNER_TEMP/init.aarch64" \
+            initramfs/init.c
+          if readelf -l "$RUNNER_TEMP/init.aarch64" | grep -q INTERP; then
+            echo "::error::init is dynamically linked"
+            exit 1
+          fi
+          # Run the same source natively: mounting and pid-1 behaviour cannot be
+          # exercised here, but the banner, cmdline and pstore paths can.
+          cc -Os -Wall -Wextra -Werror -o "$RUNNER_TEMP/init.host" initramfs/init.c
+          "$RUNNER_TEMP/init.host" --selftest
+          python3 scripts/mkinitramfs.py build \
+            --init "$RUNNER_TEMP/init.aarch64" \
+            --dir dev --dir proc --dir sys --dir sbin --dir tmp \
+            --lz4 -o "$RUNNER_TEMP/initramfs.cpio.lz4"
+          python3 scripts/mkinitramfs.py verify \
+            --image "$RUNNER_TEMP/initramfs.cpio.lz4" \
+            --expect-init "$RUNNER_TEMP/init.aarch64"
 
       - name: Check vendored tree against kernel.lock
         run: |
@@ -142,6 +168,13 @@ jobs:
           # Requirements of this ACK tree, not preferences: f2fs does not
           # compile without the unfair rwsem, and GKI_HACKS_TO_FIX drags in
           # HMM_MIRROR without the MMU_NOTIFIER API hmm.c needs.
+          # The ramdisk mounts /dev; the kernel has to provide devtmpfs.
+          for need in CONFIG_DEVTMPFS CONFIG_BLK_DEV_INITRD CONFIG_RD_LZ4; do
+            if ! grep -qx "${need}=y" "$BUILD_DIR/.config"; then
+              echo "::error::${need} is not set (initramfs cannot mount or load)"
+              missing=$((missing + 1))
+            fi
+          done
           if ! grep -qx 'CONFIG_F2FS_UNFAIR_RWSEM=y' "$BUILD_DIR/.config"; then
             echo "::error::CONFIG_F2FS_UNFAIR_RWSEM is not set"
             missing=$((missing + 1))
@@ -247,9 +280,12 @@ jobs:
           kernel="$BUILD_DIR/arch/arm64/boot/Image"
           dtb="$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb"
           out="$RUNNER_TEMP/vayu-boot.img"
-          python3 scripts/mkbootimg.py build --kernel "$kernel" --dtb "$dtb" -o "$out"
+          ramdisk="$RUNNER_TEMP/initramfs.cpio.lz4"
+          python3 scripts/mkbootimg.py build --kernel "$kernel" --dtb "$dtb" \
+            --ramdisk "$ramdisk" -o "$out"
           python3 scripts/mkbootimg.py verify --image "$out" \
             --expect-kernel "$kernel" --expect-dtb "$dtb" \
+            --expect-ramdisk "$ramdisk" \
             --expect-model "Xiaomi POCO X3 Pro" \
             --kernel-release "$(cat "$BUILD_DIR/include/config/kernel.release")"
 

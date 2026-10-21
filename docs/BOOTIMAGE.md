@@ -56,11 +56,12 @@ of the 32 MiB partition. Our images are unsigned - see
 
 ## What is still missing from the artifact
 
-- **No ramdisk in CI.** CI packages the kernel and DTB only, so `ramdisk_size`
-  is 0. Android's `init` lives in the ramdisk; a release build on the dev box
-  fills it from the device's own image with
-  `--ramdisk-from-boot backup/boot-now.img`, which copies the LZ4 payload
-  verbatim.
+- **The ramdisk is our own, not Android's.** CI builds
+  [initramfs/init.c](../initramfs/init.c) into an LZ4 legacy ramdisk and puts it
+  in `boot.img`, so the artifact no longer depends on vendor bytes. It is a
+  bringup init (mount pseudo filesystems, print identity, list pstore, idle as
+  pid 1), not Android userspace; `--ramdisk-from-boot backup/boot-now.img`
+  swaps in the device's own ramdisk instead when reaching Android is the goal.
 - **No AVB footer.** The device image ends with an `AVBf` vbmeta struct; ours
   does not. A bootloader with verification enforcing will reject it, so flashing
   this needs an unlocked bootloader, or a later step that runs `avbtool` with the

@@ -145,8 +145,9 @@ def parse(path: Path | str | bytes) -> dict:
         "descriptors": [],
         "props": {},
     })
-    # Descriptor offsets in the header are relative to the auxiliary block.
-    offset = HEADER_SIZE + _u64(vb, 96)
+    # Descriptor offsets are relative to the auxiliary block, which starts
+    # after the header and the authentication block (signed images have one).
+    offset = HEADER_SIZE + info["auth_block_size"] + _u64(vb, 96)
     end = offset + _u64(vb, 104)
     while offset + 16 <= end:
         tag = _u64(vb, offset)

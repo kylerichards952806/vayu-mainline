@@ -50,23 +50,34 @@ it is not the default (`mkdtbo.py build` with no `--dtb`, and
 `mkrelease.py build` with no `--dtb`/`--dtbo`, still emit one for
 inspection).
 
-## Signing and the AVB footer
+## The AVB footer
 
-The released images are **unsigned**: there is no AVB footer and no vbmeta.
-The reference images on the device carry one - `boot-now.img` has a 704-byte
-`AVB0` vbmeta at offset 56,971,264 and an `AVBf` footer in the last 64 bytes of
-the 128 MiB partition; `device/dtbo.img` has a 640-byte vbmeta at 294,912 and
-its footer at the end of its 32 MiB partition - and both are signed with keys
-this repo does not have and cannot derive.
+The footer is **required**, and that was measured the hard way. Flashing an image
+without one and letting the phone reboot put it back in fastboot in about a
+second, and the bootloader said why without ever entering the kernel:
 
-Writing a footer signed by anything else would be worse than writing none: a
-bootloader that finds a footer will verify it, while an image without one is
-accepted when verification is disabled. The 5.4 kernel that runs on this phone
-was itself packaged unsigned and unpadded (56,176,640 bytes for `boot.img`),
-which is the strongest evidence that this device's bootloader does not need a
-footer when unlocked. If the vendor key ever becomes available,
-`mkbootimg.py`/`mkrelease.py` can gain an `avbtool` step and the layout above
-is the one to reproduce.
+```
+fastboot boot vayu-boot.img
+Booting   FAILED (remote: 'Failed to load/authenticate boot image: Load Error')
+```
+
+So `mkbootimg.py` and `mkdtbo.py` pad to the partition size and append a footer
+(`--avb-config configs/avb-vayu.json`), `avb.py` reads it back and recomputes
+the digest, and the release verifier refuses a zip whose payloads lack one.
+
+No signing key is involved, because the device's own vbmeta uses **algorithm
+NONE**: the footer carries a salted SHA-256 of the image in a hash descriptor
+and nothing else. It proves the image is intact, not who built it - exactly what
+the 5.4 image on this phone ships with.
+
+| | boot | dtbo |
+| --- | --- | --- |
+| partition | 134,217,728 bytes | 33,554,432 bytes |
+| image size | the payload, page-aligned | 294,912 (72 pages) |
+| vbmeta | 704 bytes, algorithm NONE | 640 bytes, algorithm NONE |
+
+The salts are the device's (`configs/avb-vayu.json`), which keeps the layout
+byte-identical to the stock partition apart from avbtool's version string.
 
 ## Ramdisk
 

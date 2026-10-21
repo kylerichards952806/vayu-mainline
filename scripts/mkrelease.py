@@ -195,7 +195,14 @@ def cmd_verify(args: argparse.Namespace) -> int:
     check(info["header_size"] == mkbootimg.V2_HEADER_SIZE,
           f"header size is {mkbootimg.V2_HEADER_SIZE}")
     check(info["kernel"][56:60] == b"ARMd", "boot.img kernel is an arm64 Image")
-    check(info["dtb"][:4] == b"\xd0\x0d\xfe\xed", "boot.img carries a DTB")
+    # This device's 5.4 image has dtb_size 0 and the bootloader reads the tree
+    # out of the DTBO table, so a DTB in boot.img is not a bonus - it is a
+    # second tree that the flash does not need and that would drift out of sync
+    # with the one in dtbo.img.
+    check(info["dtb_size"] == 0,
+          f"boot.img carries no DTB (the tree is in dtbo; got {info['dtb_size']} bytes)")
+    check(info["ramdisk_size"] > 0,
+          f"boot.img carries a ramdisk ({info['ramdisk_size']:,} bytes)")
     check(len(dtbo) == args.dtbo_size,
           f"dtbo.img is {args.dtbo_size:,} bytes (got {len(dtbo):,})")
     dtbo_info = mkdtbo.describe(dtbo)

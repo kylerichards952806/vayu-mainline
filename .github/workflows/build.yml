@@ -54,6 +54,18 @@ jobs:
           echo "kernel.lock: $want / Makefile: $got"
           [ "$want" = "$got" ] || { echo "vendored tree does not match kernel.lock" >&2; exit 1; }
 
+      # A full arm64 build of this config is ~45 minutes, and a hosted runner
+      # can be preempted while linking vmlinux (observed once). Restoring the
+      # previous out-of-tree build directory turns a retry into an incremental
+      # build, which is what makes "is the kernel name right?" cheap to re-check.
+      - name: Restore build directory
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/build
+          key: build-${{ hashFiles('kernel.lock', 'configs/vayu-android17.config', 'configs/vayu-mainline.fragment') }}-${{ github.run_id }}
+          restore-keys: |
+            build-${{ hashFiles('kernel.lock', 'configs/vayu-android17.config', 'configs/vayu-mainline.fragment') }}-
+
       - name: Configure
         run: |
           set -euo pipefail
@@ -180,6 +192,13 @@ jobs:
           path: ${{ runner.temp }}/build/.config
           include-hidden-files: true
           if-no-files-found: warn
+
+      - name: Save build directory
+        if: env.CONFIG_ONLY != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/build
+          key: build-${{ hashFiles('kernel.lock', 'configs/vayu-android17.config', 'configs/vayu-mainline.fragment') }}-${{ github.run_id }}
 
       - uses: actions/upload-artifact@v4
         if: env.WANT_IMAGE == 'true' && env.CONFIG_ONLY != 'true'

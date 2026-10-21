@@ -47,8 +47,7 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc bison flex libssl-dev libelf-dev \
             clang-18 lld-18 llvm-18 \
-            gcc-aarch64-linux-gnu gcc lz4 \
-            libc6-dev
+            gcc-aarch64-linux-gnu lz4 qemu-user-static
           # LLVM's own bin dir carries the unversioned names the kernel's
           # LLVM=1 mode and the CFI/LTO helpers expect.
           echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
@@ -68,12 +67,12 @@ jobs:
             echo "::error::init is dynamically linked"
             exit 1
           fi
-          # Run the same source natively: mounting and pid-1 behaviour cannot be
-          # exercised here, but the banner, cmdline and pstore paths can. Use
-          # gcc, not cc: with LLVM's bin first on PATH, cc is clang, which does
-          # not add the multiarch include dir glibc headers need.
-          gcc -Os -Wall -Wextra -Werror -o "$RUNNER_TEMP/init.host" initramfs/init.c
-          "$RUNNER_TEMP/init.host" --selftest
+          # Run the arm64 binary itself under qemu-user, not a host rebuild:
+          # the guest is static, so this needs no aarch64 libc, and it tests
+          # the exact executable that goes into the ramdisk. Mounts and pid-1
+          # behaviour are skipped by --selftest; the banner, cmdline and pstore
+          # paths are what runs.
+          qemu-aarch64-static "$RUNNER_TEMP/init.aarch64" --selftest
           python3 scripts/mkinitramfs.py build \
             --init "$RUNNER_TEMP/init.aarch64" \
             --dir dev --dir proc --dir sys --dir sbin --dir tmp \

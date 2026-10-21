@@ -54,6 +54,7 @@ jobs:
           set -euo pipefail
           # LineageOS 24.0's 5.4 config, filtered to symbols this tree still
           # defines, then the upstream drivers the vendor config never needed.
+          mkdir -p "$BUILD_DIR"
           cp configs/vayu-android17.config "$BUILD_DIR/.config"
           kernel/scripts/kconfig/merge_config.sh -m -O "$BUILD_DIR"             "$BUILD_DIR/.config" configs/vayu-mainline.fragment
           make -C kernel O="$BUILD_DIR" ARCH=arm64 LLVM=1 olddefconfig

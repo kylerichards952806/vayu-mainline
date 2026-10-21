@@ -40,9 +40,12 @@ AUTO = {
 
 # Deliberate deltas from the 5.4 value, each with a reason.
 OVERRIDES = {
-    # The device reports "-qgki_aman" for a 5.4 vendor kernel; a 6.18 mainline
-    # build has to be distinguishable in `uname -r`.
-    "CONFIG_LOCALVERSION": 'CONFIG_LOCALVERSION="-vayu-mainline"',
+    # What Android shows under Settings > About phone > Kernel version is
+    # `uname -r`, i.e. VERSION.PATCHLEVEL.SUBLEVEL + CONFIG_LOCALVERSION.
+    "CONFIG_LOCALVERSION": 'CONFIG_LOCALVERSION="-vayu-kyler084"',
+    # Without this, setlocalversion appends -g<sha> (and -dirty) from whatever
+    # git repository the tree sits in, so the name would not be stable.
+    "CONFIG_LOCALVERSION_AUTO": "# CONFIG_LOCALVERSION_AUTO is not set",
 }
 
 

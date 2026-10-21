@@ -97,8 +97,8 @@ jobs:
               echo "$value"
             fi
           done
-          if ! grep -qx 'CONFIG_LOCALVERSION="-vayu-mainline"' "$BUILD_DIR/.config"; then
-            echo "::error::CONFIG_LOCALVERSION is not -vayu-mainline"
+          if ! grep -qx 'CONFIG_LOCALVERSION="-vayu-kyler084"' "$BUILD_DIR/.config"; then
+            echo "::error::CONFIG_LOCALVERSION is not -vayu-kyler084"
             missing=$((missing + 1))
           fi
           echo "--- wireless dependency chain ---"
@@ -149,6 +149,7 @@ jobs:
         with:
           name: vayu-config
           path: ${{ runner.temp }}/build/.config
+          include-hidden-files: true
           if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4

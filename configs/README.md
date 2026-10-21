@@ -40,8 +40,9 @@ Symbols whose value kconfig recomputes (`CONFIG_CC_VERSION_TEXT`,
 `CONFIG_CLANG_VERSION`, ...) are stripped so the file does not claim a toolchain
 the build does not use.
 
-One override: `CONFIG_LOCALVERSION="-vayu-mainline"`, replacing the device's
-`-qgki_aman`, so `uname -r` distinguishes a mainline boot from the vendor one.
+One override: `CONFIG_LOCALVERSION="-vayu-kyler084"` (and `LOCALVERSION_AUTO` off, so
+nothing is appended). Android shows this string under Settings > About phone >
+Kernel version, because that page reports `uname -r`.
 
 ## Why a fragment on top
 

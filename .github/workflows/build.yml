@@ -81,7 +81,9 @@ jobs:
           "
           missing=0
           for sym in $required; do
-            value=$(grep -E "^${sym}=" "$BUILD_DIR/.config" | head -1)
+            # grep exits 1 when nothing matches; under pipefail that
+            # would abort the step instead of reporting the symbol.
+            value=$(grep -m1 -E "^${sym}=" "$BUILD_DIR/.config" || true)
             if [ -z "$value" ] || ! echo "$value" | grep -qE "=[ym]$"; then
               echo "::error::${sym} is not built-in or modular"
               missing=$((missing + 1))
@@ -94,6 +96,8 @@ jobs:
             missing=$((missing + 1))
           fi
           [ "$missing" -eq 0 ] || { echo "$missing required symbol(s) not set"; exit 1; }
+          echo "--- dependency chain for the wireless stack ---"
+          grep -E "^(CONFIG_(HWSPINLOCK|QCOM_SMEM|QCOM_RPROC_COMMON|REMOTEPROC|MAC80211|CFG80211|ATH10K|ATH10K_SNOC)=|# CONFIG_(HWSPINLOCK|QCOM_SMEM|QCOM_RPROC_COMMON|MAC80211|CFG80211|ATH10K|ATH10K_SNOC) is not set)" "$BUILD_DIR/.config" || true
           grep -c '^CONFIG_' "$BUILD_DIR/.config" | sed 's/^/configured symbols: /'
 
       - name: Build DTBs

@@ -1,0 +1,9 @@
+name: t1
+on:
+  push:
+    branches: [main]
+jobs:
+  hello:
+    runs-on: ubuntu-24.04
+    steps:
+      - run: echo hi

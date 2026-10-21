@@ -1,0 +1,14 @@
+# Kernel source vendored in kernel/ — where it came from and what it is.
+# Plain KEY=VALUE so shell and CI can read it without a parser.
+repo=https://android.googlesource.com/kernel/common
+branch=android17-6.18
+commit=17e0d6827c4bf05f920cdc8fa92345da202da839
+version=6.18.32
+tree_date=2026-10-20T12:06:41-07:00
+vendored=2026-10-21
+method=git clone --depth 1 --single-branch; .git removed
+pack_size=283.92 MiB
+file_count=91828
+# Rebase procedure: clone the new base the same way, replace kernel/, re-apply
+# the vayu DTS from import/dts/ plus the changes listed in docs/PROVENANCE.md,
+# then update this file in the same commit.

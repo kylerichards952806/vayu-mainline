@@ -4,8 +4,8 @@ Mainline / Android-Common-Kernel bringup work for the **Xiaomi POCO X3 Pro**
 (`vayu` / `M2102J20SG`, Qualcomm **SM8150**), which currently runs a downstream
 **5.4 QGKI** vendor kernel (`5.4.302-qgki_aman`, `techpack/*` + `qcacld-3.0`).
 
-> **Status: seed only.** Nothing here boots yet. This repo holds the imported
-> starting material, the CI that compiles it, and the plan.
+> **Status: source vendored, nothing boots yet.** The ACK tree is in `kernel/`,
+> the board description compiles, CI is green. No boot attempt has been made.
 
 Read [docs/ASSESSMENT.md](docs/ASSESSMENT.md) first — it answers "how easy is
 this?" with numbers, and separates the two very different projects that the
@@ -15,47 +15,44 @@ phrase *"move vayu to mainline-android"* can mean.
 
 | Path | What it is |
 | --- | --- |
-| `import/dts/sm8150-xiaomi-vayu.dts` | The **899-line, 106 KB** vayu device tree from the postmarketOS SM8150 tree, unmodified. The single most valuable artefact: it already describes the board (panel, touch, PMICs, regulators, reserved-memory carve-outs, UFS, USB, WCN3990). |
-| `dts/sm8150-xiaomi-vayu.dts` | Working copy: the same file plus rebase fixes for 6.18. `diff -u import/dts dts` is the rebase log. |
-| `import/config/config-postmarketos-qcom-sm8150.aarch64` | 7,968-line `defconfig`+`sm8150.config` merge from postmarketOS. Use as a base, not as-is. |
-| `scripts/prepare-tree.sh` | Clones/overlays the DTS and config onto a chosen kernel base and prints the build commands. |
-| `.github/workflows/build.yml` | Compiles the DTB (and optionally a full `Image`) against `android17-6.18`, `android-mainline`, or `linux-6.18.y`. |
+| `kernel/` | **Vendored Android Common Kernel**, branch **`android17-6.18`**, commit `17e0d6827`, Linux **6.18.32**. Shallow: one tree, no history. 91,828 files, 284 MiB packed. See `kernel.lock`. |
+| `kernel/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dts` | The vayu device tree, integrated into the tree and registered in the qcom `Makefile`. |
+| `import/dts/sm8150-xiaomi-vayu.dts` | The pristine postmarketOS original this was forked from — the rebase log is the diff against the in-tree file. |
+| `import/config/config-postmarketos-qcom-sm8150.aarch64` | 7,968-line config fragment, merged over `defconfig` in CI. |
+| `.github/workflows/build.yml` | Builds `sm8150-xiaomi-vayu.dtb` (and optionally the full `Image`) out-of-tree with LLVM 18. |
 | `docs/HARDWARE.md` | Per-subsystem status: what upstream already has for SM8150, what vayu needs on top, what is missing entirely. |
-| `docs/PROVENANCE.md` | Exact upstream commits the imported files came from, and their licences. |
+| `docs/PROVENANCE.md` | Exact upstream commits, sizes, and licences. |
 
-Everything in `import/` is GPL-2.0-only kernel source; this repo is therefore
-GPL-2.0-only.
+Everything under `kernel/` and `import/` is GPL-2.0-only kernel source; the repo
+is GPL-2.0-only.
 
-## Why not start from `torvalds/linux`
+## Build
 
-Starting from a pristine kernel means re-deriving vayu's board description from
-the vendor DTS (≈6,000 lines of downstream SDE/KGSL/techpack properties, most of
-which have no mainline equivalent). The postmarketOS SM8150 tree already did
-that work for `sm8150.dtsi` + `pm8150*.dtsi` + vayu, on a 6.4 kernel. Rebasing
-*that* forward is days; starting from zero is months.
-
-## Quickstart (Linux host or CI)
+The tree is built **out-of-tree** so `kernel/` stays pristine and never fills
+with build artifacts:
 
 ```bash
-# 1. pick a base and fetch it
-./scripts/prepare-tree.sh /tmp/kernel android17-6.18
+make -C kernel O=../build ARCH=arm64 LLVM=1 defconfig
+kernel/scripts/kconfig/merge_config.sh -m -O ../build ../build/.config \
+  import/config/config-postmarketos-qcom-sm8150.aarch64
+make -C kernel O=../build ARCH=arm64 LLVM=1 olddefconfig
 
-# 2. build the DTBs only (fast; this is what CI does by default)
-cd /tmp/kernel
-make -j"$(nproc)" ARCH=arm64 LLVM=1 dtbs
-
-# 3. full kernel
-make -j"$(nproc)" ARCH=arm64 LLVM=1 Image
+make -C kernel O=../build -j"$(nproc)" ARCH=arm64 LLVM=1 dtbs
+make -C kernel O=../build -j"$(nproc)" ARCH=arm64 LLVM=1 Image   # full kernel
 ```
 
-There is **no local toolchain on the Windows dev box** (no `make`, no clang, no
-WSL — see the 5.4 tree's `AUDIT.md` §5), so CI is the build path. Workflow
-dispatch inputs: `base`, `full` (build `Image` too), `config` (merge the pmOS
-config).
+Requires `clang`/`ld.lld` (17 or newer), `bc`, `bison`, `flex`, `libssl-dev`,
+`libelf-dev`. There is **no local toolchain on the Windows dev box** (no `make`,
+no clang, no WSL — see the 5.4 tree's `AUDIT.md` §5), so CI is the build path.
 
-## First milestone`sm8150-xiaomi-vayu.dtb` compiles against `android17-6.18` with no binding
- errors. That is a real, checkable step: it proves the imported board description
-is still valid against a 6.18-era `sm8150.dtsi`, before any boot attempt.
+CI inputs: `full` (build `Image` too), `config` (merge the pmOS fragment).
+
+## Why this exact tree
+
+`android17-6.18` is the ACK line for Android 17, so the KMI generation matches
+the ROM family. `android-mainline` is deliberately **not** used: it tracks Linux
+7.3-rc, reports a fake `7.2-rc9` for userspace compatibility, and carries no KMI
+stability guarantee.
 
 ## Boot-image reality on this device
 

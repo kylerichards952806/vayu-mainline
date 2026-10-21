@@ -1,8 +1,8 @@
 name: build
 
-# P1 of docs/ASSESSMENT.md: does the imported 6.4-era vayu DTS still describe
-# the board correctly against a 6.18-era sm8150.dtsi? A green run means "the
-# DTB compiles"; it does not mean the device boots.
+# P1 of docs/ASSESSMENT.md: does the vayu board description still describe the
+# hardware correctly against this kernel? A green run means "the DTB (and
+# optionally the Image) compiles"; it does not mean the device boots.
 
 on:
   push:
@@ -10,11 +10,6 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
-      base:
-        description: Kernel base to build against
-        type: choice
-        options: [android17-6.18, android16-6.12, android15-6.6, linux-6.18.y, linux-6.12.y, mainline]
-        default: android17-6.18
       full:
         description: Also build the full arm64 Image (slow)
         type: boolean
@@ -30,11 +25,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-24.04
-    timeout-minutes: 90
+    timeout-minutes: 120
     env:
-      BASE: ${{ inputs.base || 'android17-6.18' }}
       WANT_CONFIG: ${{ github.event_name == 'workflow_dispatch' && inputs.config || 'false' }}
       WANT_IMAGE: ${{ github.event_name == 'workflow_dispatch' && inputs.full || 'false' }}
+
     steps:
       - uses: actions/checkout@v4
 
@@ -48,57 +43,67 @@ jobs:
           # LLVM's own bin dir carries the unversioned names the kernel's
           # LLVM=1 mode and the CFI/LTO helpers expect.
           echo "/usr/lib/llvm-18/bin" >> "$GITHUB_PATH"
-          echo "KERNEL_DIR=$RUNNER_TEMP/kernel" >> "$GITHUB_ENV"
+          echo "BUILD_DIR=$RUNNER_TEMP/build" >> "$GITHUB_ENV"
           clang --version | head -1
 
-      - name: Fetch kernel and overlay vayu
+      - name: Check vendored tree against kernel.lock
         run: |
           set -euo pipefail
+          want=$(sed -n 's/^version=//p' kernel.lock)
+          got=$(make -s -C kernel kernelversion)
+          echo "kernel.lock: $want / Makefile: $got"
+          [ "$want" = "$got" ] || { echo "vendored tree does not match kernel.lock" >&2; exit 1; }
+
+      - name: Configure
+        run: |
+          set -euo pipefail
+          make -C kernel O="$BUILD_DIR" ARCH=arm64 LLVM=1 defconfig
           if [ "$WANT_CONFIG" = "true" ]; then
-            ./scripts/prepare-tree.sh "$KERNEL_DIR" "$BASE" --with-config
-          else
-            ./scripts/prepare-tree.sh "$KERNEL_DIR" "$BASE"
+            # Merge onto the defconfig that was just written, never by passing
+            # the fragment as the base (that replaced the whole config before).
+            kernel/scripts/kconfig/merge_config.sh -m -O "$BUILD_DIR" \
+              "$BUILD_DIR/.config" \
+              import/config/config-postmarketos-qcom-sm8150.aarch64
           fi
+          make -C kernel O="$BUILD_DIR" ARCH=arm64 LLVM=1 olddefconfig
 
       - name: Build DTBs
-        working-directory: ${{ runner.temp }}/kernel
         run: |
           set -euo pipefail
-          [ -f .config ] || make -j"$(nproc)" ARCH=arm64 LLVM=1 defconfig
-          make -j"$(nproc)" ARCH=arm64 LLVM=1 dtbs
-          dtb=arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb
+          make -C kernel O="$BUILD_DIR" -j"$(nproc)" ARCH=arm64 LLVM=1 dtbs
+          dtb="$BUILD_DIR/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb"
           python3 - "$dtb" <<'PY'
           import sys
           data = open(sys.argv[1], "rb").read()
           assert data[:4] == b"\xd0\x0d\xfe\xed", data[:4]
+          assert b"Xiaomi POCO X3 Pro" in data, "model string missing"
           print(f"FDT ok: {sys.argv[1]} ({len(data)} bytes)")
           PY
 
       - name: Build Image
         if: env.WANT_IMAGE == 'true'
-        working-directory: ${{ runner.temp }}/kernel
         run: |
           set -euo pipefail
-          make -j"$(nproc)" ARCH=arm64 LLVM=1 Image
-          python3 - arch/arm64/boot/Image <<'PY'
+          make -C kernel O="$BUILD_DIR" -j"$(nproc)" ARCH=arm64 LLVM=1 Image
+          python3 - "$BUILD_DIR/arch/arm64/boot/Image" <<'PY'
           import struct, sys
-          data = open(sys.argv[1], "rb")
-          magic = struct.unpack_from("<I", data.read(64), 56)[0]
+          with open(sys.argv[1], "rb") as f:
+              magic = struct.unpack_from("<I", f.read(64), 56)[0]
           assert magic == 0x644d5241, hex(magic)   # "ARMd"
           print("arm64 Image header ok")
           PY
 
       - uses: actions/upload-artifact@v4
         with:
-          name: vayu-${{ env.BASE }}-dtb
-          path: ${{ runner.temp }}/kernel/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb
+          name: vayu-dtb
+          path: ${{ runner.temp }}/build/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dtb
           if-no-files-found: error
 
       - uses: actions/upload-artifact@v4
         if: env.WANT_IMAGE == 'true'
         with:
-          name: vayu-${{ env.BASE }}-Image
+          name: vayu-Image
           path: |
-            ${{ runner.temp }}/kernel/arch/arm64/boot/Image
-            ${{ runner.temp }}/kernel/.config
+            ${{ runner.temp }}/build/arch/arm64/boot/Image
+            ${{ runner.temp }}/build/.config
           if-no-files-found: error

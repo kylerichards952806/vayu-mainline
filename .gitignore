@@ -1,7 +1,6 @@
-.kernel*/
-/kernel-*/
-.tmp/
-out/
-*.o
-*.dtb
-__pycache__/
+# out-of-tree build output (see README: make -C kernel O=../build)
+/build/
+# in-tree build leftovers if someone builds without O=
+/kernel/.config
+# editor/OS noise
+.DS_Store

@@ -19,13 +19,15 @@ It `#include`s `sm8150.dtsi`, `pm8150.dtsi`, `pm8150b.dtsi`, `pm8150l.dtsi`,
 all of which exist in `android17-6.18` and in current mainline — verified by
 fetching them from `android.googlesource.com`.
 
-### `dts/sm8150-xiaomi-vayu.dts` (working copy)
+### `kernel/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dts` (working copy)
 
-A copy of the file above that is allowed to diverge. Diff it against the
-snapshot to see every rebase change:
+A copy of the file above that is allowed to diverge, integrated into the
+vendored kernel tree and registered in that directory's `Makefile`. Diff it
+against the snapshot to see every rebase change:
 
 ```bash
-diff -u import/dts/sm8150-xiaomi-vayu.dts dts/sm8150-xiaomi-vayu.dts
+diff -u import/dts/sm8150-xiaomi-vayu.dts \
+  kernel/arch/arm64/boot/dts/qcom/sm8150-xiaomi-vayu.dts
 ```
 
 Changes so far (6.18 rebase):
@@ -36,6 +38,52 @@ Changes so far (6.18 rebase):
   `uart9`), so `&uart13` no longer resolves. Register, clock
   (`GCC_QUPV3_WRAP2_S3_CLK`), interrupt (SPI 585) and pin function (`qup13`) are
 taken unchanged from the 6.4-era `sm8150.dtsi`.
+
+## `kernel/` — vendored Android Common Kernel
+
+| | |
+| --- | --- |
+| Upstream | `https://android.googlesource.com/kernel/common` |
+| Branch | `android17-6.18` |
+| Commit | `17e0d6827c4bf05f920cdc8fa92345da202da839` (2026-10-20) |
+| Version | Linux **6.18.32** |
+| Method | `git clone --depth 1 --single-branch` then `.git` removed |
+| Size | 91,828 files, **283.92 MiB** in one pack, 1.3 GB checked out |
+| Licence | GPL-2.0-only |
+
+No history is vendored: one commit's worth of tree, so there is nothing to
+rebase with `git`. Moving to a new ACK point means re-cloning the same way,
+replacing `kernel/`, re-applying the vayu DTS, and updating `kernel.lock` in the
+same commit.
+
+Deliberately missing from the tree: `.git`, build output, and any firmware.
+
+**Integrity check.** Every blob in `kernel/` was compared against upstream
+`17e0d6827`: all 91,828 paths are byte-identical (same blob SHA), with exactly
+two intended deltas — `arch/arm64/boot/dts/qcom/Makefile` (one added `dtb-y`
+line) and the new `sm8150-xiaomi-vayu.dts`.
+
+### 13 filenames a Windows checkout cannot hold
+
+The tree was cloned on NTFS, which is case-insensitive, so upstream paths that
+differ from a sibling only by case were collapsed. They were written back into
+the git index from the upstream blobs (so the repository has them and a Linux
+checkout materialises all of them), but this working tree cannot show both:
+
+```
+include/uapi/linux/netfilter/xt_CONNMARK.h      include/uapi/linux/netfilter/xt_DSCP.h
+include/uapi/linux/netfilter/xt_MARK.h          include/uapi/linux/netfilter/xt_RATEEST.h
+include/uapi/linux/netfilter/xt_TCPMSS.h        include/uapi/linux/netfilter_ipv4/ipt_ECN.h
+include/uapi/linux/netfilter_ipv4/ipt_TTL.h     include/uapi/linux/netfilter_ipv6/ip6t_HL.h
+net/netfilter/xt_DSCP.c                         net/netfilter/xt_HL.c
+net/netfilter/xt_RATEEST.c                      net/netfilter/xt_TCPMSS.c
+tools/memory-model/litmus-tests/Z6.0+pooncelock+poonceLock+pombonce.litmus
+```
+
+Those 13 paths are marked `skip-worktree` locally so `git status` stays clean on
+Windows; they are present in the commit and in CI. Any future re-import on
+Windows needs the same step — plain `git add` also silently drops every `*.S`
+file, because the kernel's own `.gitignore` has `*.s` and NTFS folds the case.
 
 ## `import/config/config-postmarketos-qcom-sm8150.aarch64`
 

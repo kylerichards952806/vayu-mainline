@@ -417,9 +417,12 @@ jobs:
           if-no-files-found: warn
 
       # Even a failed build leaves most objects behind, and restoring them is
-      # what makes the next attempt finish instead of starting over.
+      # what makes the next attempt finish instead of starting over. Only image
+      # runs save: a config/DTB run would otherwise store its shallow build
+      # directory under the same prefix and become the newest cache, which is
+      # what a restoring image run would then pick up.
       - name: Save build directory
-        if: always() && env.CONFIG_ONLY != 'true'
+        if: always() && env.CONFIG_ONLY != 'true' && env.WANT_IMAGE == 'true'
         uses: actions/cache/save@v4
         with:
           path: ${{ runner.temp }}/build

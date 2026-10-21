@@ -76,6 +76,15 @@ Two entries are there because this ACK tree does not compile without them:
   own hidden dependencies. `MMU_NOTIFIER` itself is a hidden bool and cannot be
   set from `.config`, which is why the gate has to go rather than be satisfied.
 
+## CI builds without debug information
+
+`CONFIG_DEBUG_INFO=y` (DWARF4) is kept in `vayu-android17.config` because a
+vayu has no UART: symbols in `vmlinux` are how a panic is read out of ramoops.
+CI turns it off before `olddefconfig`, because linking `vmlinux.o` with it
+peaks at 15.9 GB on the 16 GB hosted runner and the job is killed. Debug info
+does not affect code generation, so the `Image` CI verifies is byte-for-byte
+the one a full build produces - only `vmlinux` differs.
+
 ## CI assertions
 
 `.github/workflows/build.yml` copies `vayu-android17.config` (fragment already

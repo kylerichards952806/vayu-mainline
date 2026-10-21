@@ -75,7 +75,16 @@ jobs:
           # The generated file already contains the fragment; see
           # scripts/gen-config.py and configs/README.md.
           cp configs/vayu-android17.config "$BUILD_DIR/.config"
+          # This runner has 16 GB, and linking vmlinux.o with the config's
+          # DEBUG_INFO + DWARF4 peaks at 15.9 GB and gets the job killed
+          # (measured in the heartbeat). Debug info does not change codegen or
+          # the Image bytes - it only bloats vmlinux - so CI links without it.
+          # The committed config keeps it, because a device with no UART needs
+          # symbols to read a crash out of ramoops.
+          kernel/scripts/config --file "$BUILD_DIR/.config" \
+            -d DEBUG_INFO -e DEBUG_INFO_NONE
           make -C kernel O="$BUILD_DIR" ARCH=arm64 LLVM=1 olddefconfig 2>&1 | tee /tmp/olddefconfig.log
+          grep -E '^(CONFIG_DEBUG_INFO|# CONFIG_DEBUG_INFO)' "$BUILD_DIR/.config" | head -3 || true
 
       # A fresh checkout stamps every source with the current time, so make
       # treats every restored object as stale and rebuilds the whole kernel.
@@ -128,6 +137,10 @@ jobs:
           # HMM_MIRROR without the MMU_NOTIFIER API hmm.c needs.
           if ! grep -qx 'CONFIG_F2FS_UNFAIR_RWSEM=y' "$BUILD_DIR/.config"; then
             echo "::error::CONFIG_F2FS_UNFAIR_RWSEM is not set"
+            missing=$((missing + 1))
+          fi
+          if grep -qx 'CONFIG_DEBUG_INFO=y' "$BUILD_DIR/.config"; then
+            echo "::error::CI must link without debug info: 16 GB is not enough for the DWARF link"
             missing=$((missing + 1))
           fi
           for off in CONFIG_GKI_HACKS_TO_FIX CONFIG_HMM_MIRROR; do
